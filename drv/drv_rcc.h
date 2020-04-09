@@ -122,6 +122,15 @@ typedef enum DRV_RCC_ahb_apb_ENUM {
     RCC_ahb_apb_COUNT = 55u
 } DRV_RCC_ahb_apb_E;
 
+//! System clock candidates
+typedef enum DRV_RCC_sysClk_ENUM {
+    RCC_sysClk_HSI_16 = 0u,
+    RCC_sysClk_MSI    = 1u,
+    RCC_sysClk_HSE    = 2u,
+    RCC_sysClk_PLL    = 3u,
+    RCC_sysClk_COUNT  = 4u
+} DRV_RCC_sysClk_E;
+
 /***************************************************************************************************
  *                      DATA TYPES
  **************************************************************************************************/
@@ -131,7 +140,7 @@ typedef enum DRV_RCC_ahb_apb_ENUM {
  **************************************************************************************************/
 //! RCC Configuration structure
 typedef struct DRV_RCC_config_STRUCT {
-
+    uint8_t systemClockSrc; //!< Chosen clock for System Clock ::DRV_RCC_sysClk_E
 } DRV_RCC_config_S;
 
 /***************************************************************************************************
@@ -143,7 +152,7 @@ typedef struct DRV_RCC_config_STRUCT {
  **************************************************************************************************/
 /***************************************************************************************************
  * @brief   Function is used to reset input AHB or APB peripheral to its default state.
- * @details Input peripheral will reset its status to a state as when MCU boots up.
+ * @details Input peripheral will reset its status to the same state as when MCU boots up.
  * *************************************************************************************************
  * @param   [in]      inPeripheral - Input AHB/APB peripheral ID ::DRV_RCC_ahb_apb_E
  * @param   [out]     outErr       - Output error enumerator

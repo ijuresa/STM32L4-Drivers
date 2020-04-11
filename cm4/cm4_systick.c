@@ -56,6 +56,9 @@
 //! CLOCK_DIVIDER
 #define SYSTICK_CLOCK_DIVIDER (8u) //!< In case ::SYSTICK_clockSrc_AHB_8 is chosen
 
+//!
+#define SYSTICK_MS_IN_SEC (1000u)
+
 /***************************************************************************************************
  *                      PRIVATE DATA TYPES
  **************************************************************************************************/
@@ -204,7 +207,7 @@ static uint32_t SYSTICK_calculateReloadVal(const CM4_SYSTICK_config_S *inConfig)
     }
 
     // Calculate below second
-    outReloadVal = (clockSpeed / inConfig->freqBelowSec);
+    outReloadVal = ((clockSpeed / SYSTICK_MS_IN_SEC) * inConfig->freqBelowSec);
 
     // If needed, add above second
     if(inConfig->freqAboveSec > 0u) {

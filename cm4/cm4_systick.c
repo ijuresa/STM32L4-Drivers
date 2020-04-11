@@ -73,8 +73,8 @@ static CM4_SYSTICK_config_S lSysTickConfig = {
     .freqAboveSec = 0u, //! 0 seconds
     .ahbClockFrequency = 4000000, //! 4MHz --> Default MSI Clock value, after reset
     .useException = FALSE,
-    .param = NULL_PTR,
-    .callbackFunct = NULL_PTR
+    .callbackFunct = NULL_PTR,
+    .param = NULL_PTR
 };
 
 // SysTick

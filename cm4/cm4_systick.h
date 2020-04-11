@@ -77,15 +77,11 @@ typedef struct CM4_SYSTICK_config_STRUCT {
                            //!  trigger in one second. 1000 -> 1ms
     uint32_t freqAboveSec; //!< Requested frequency above one second. Leave 0 if you need only below
     uint32_t ahbClockFrequency; //!< Current AHB clock frequency in HZ.
-                                //!  In case this is 0 driver will calculate it by itself.
-                                //!  But beware!!  If you initialize SysTick before RCC is
-                                //!  configured SysTick will have wrong values - as it will read
-                                //!  old register values and configure itself according to them
 
     //! Exception part
     bool_t useException; //!< Flag indicating if exception is enabled
-    SYSTICK_param param; //!< Pointer to parameter passed with the exception
     CM4_SYSTICK_callback callbackFunct; //!< Pointer to called function when exception is triggered
+    SYSTICK_param param; //!< Pointer to parameter passed with the exception
 } CM4_SYSTICK_config_S;
 
 /***************************************************************************************************

@@ -56,8 +56,9 @@
 //! CLOCK_DIVIDER
 #define SYSTICK_CLOCK_DIVIDER (8u) //!< In case ::SYSTICK_clockSrc_AHB_8 is chosen
 
-//!
+//! Time transformations
 #define SYSTICK_MS_IN_SEC (1000u)
+#define SYSTICK_US_IN_SEC (1000000u)
 
 /***************************************************************************************************
  *                      PRIVATE DATA TYPES
@@ -72,10 +73,10 @@ static bool_t isInitialised = FALSE;
 //! Default SysTick configuration
 static CM4_SYSTICK_config_S lSysTickConfig = {
     .clockSrc = (uint8_t)SYSTICK_clockSrc_AHB,
-    .freqBelowSec = 1000u, //! 1ms
-    .freqAboveSec = 0u, //! 0 seconds
+    .us = 0u,
+    .ms = 1u,
+    .sec = 0u,
     .ahbClockFrequency = 4000000, //! 4MHz --> Default MSI Clock value, after reset
-    .useException = FALSE,
     .callbackFunct = NULL_PTR,
     .param = NULL_PTR
 };
@@ -121,7 +122,7 @@ void CM4_SYSTICK_init(const CM4_SYSTICK_config_S *inConfig, DRV_ERROR_err_E *out
                 *sysCvr = 0u;
 
                 // Check if interrupts are enabled
-                if(lSysTickConfig.useException == TRUE) {
+                if(lSysTickConfig.callbackFunct != NULL_PTR) {
                     *sysCsr |= SYST_CSR_TICKINT_EN;
                 }
 
@@ -206,12 +207,19 @@ static uint32_t SYSTICK_calculateReloadVal(const CM4_SYSTICK_config_S *inConfig)
         clockSpeed /= SYSTICK_CLOCK_DIVIDER;
     }
 
-    // Calculate below second
-    outReloadVal = ((clockSpeed / SYSTICK_MS_IN_SEC) * inConfig->freqBelowSec);
+    // Calculate needed clock cycles for selected microseconds
+    if(inConfig->us > 0u) {
+        outReloadVal = ((clockSpeed / SYSTICK_US_IN_SEC) * inConfig->us);
+    }
 
-    // If needed, add above second
-    if(inConfig->freqAboveSec > 0u) {
-        outReloadVal += (inConfig->freqAboveSec * clockSpeed);
+    // Calculate needed clock cycles for selected milliseconds
+    if(inConfig->ms > 0u) {
+        outReloadVal += ((clockSpeed / SYSTICK_MS_IN_SEC) * inConfig->ms);
+    }
+
+    // Calculate needed clock cycles for selected seconds
+    if(inConfig->sec > 0u) {
+        outReloadVal += (inConfig->sec * clockSpeed);
     }
 
     return (outReloadVal - 1u);

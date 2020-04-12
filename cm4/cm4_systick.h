@@ -70,16 +70,14 @@ typedef void (*CM4_SYSTICK_callback)(SYSTICK_param inParam);
 typedef struct CM4_SYSTICK_config_STRUCT {
     uint8_t clockSrc; //!< Wanted clock source ::CM4_SYSTICK_clockSrc_E
 
-    //! Example for: 1 second and 20ms:
-    //!  - freqBelowSec = 20
-    //!  - freqAboveSec = 1
-    uint32_t freqBelowSec; //!< Requested frequency below one second. How many times you want it to
-                           //!  trigger in one second. 1000 -> 1ms
-    uint32_t freqAboveSec; //!< Requested frequency above one second. Leave 0 if you need only below
+    //! Configure SysTick trigger time
+    uint32_t us; //!< Number of microseconds
+    uint32_t ms; //!< Number of milliseconds
+    uint32_t sec; //!< Number of seconds
+
     uint32_t ahbClockFrequency; //!< Current AHB clock frequency in HZ.
 
     //! Exception part
-    bool_t useException; //!< Flag indicating if exception is enabled
     CM4_SYSTICK_callback callbackFunct; //!< Pointer to called function when exception is triggered
     SYSTICK_param param; //!< Pointer to parameter passed with the exception
 } CM4_SYSTICK_config_S;

@@ -101,6 +101,8 @@ typedef struct CM4_SYSTICK_config_STRUCT {
  *                                 - Without an interrupt -> You need to poll ::CM4_SYSTICK_isFinished
  * @param   [out]     *outErr   - Output driver error enumerator
  * *************************************************************************************************
+ * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Reload value does not fit in predefined range.
+ * *************************************************************************************************
  * @return  Nothing
  **************************************************************************************************/
 void CM4_SYSTICK_init(const CM4_SYSTICK_config_S *inConfig, DRV_ERROR_err_E *outErr);
@@ -111,6 +113,8 @@ void CM4_SYSTICK_init(const CM4_SYSTICK_config_S *inConfig, DRV_ERROR_err_E *out
  * *************************************************************************************************
  * @param   [out]     *outErr   - Output driver error enumerator
  * *************************************************************************************************
+ * @exceptions        ERROR_err_NOT_INITIALISED: SysTick driver is not initialized.
+ * *************************************************************************************************
  * @return  Nothing
  **************************************************************************************************/
 void CM4_SYSTICK_start(DRV_ERROR_err_E *outErr);
@@ -120,6 +124,8 @@ void CM4_SYSTICK_start(DRV_ERROR_err_E *outErr);
  * @details It needs to be properly initialized beforehand.
  * *************************************************************************************************
  * @param   [out]     *outErr   - Output driver error enumerator
+ * *************************************************************************************************
+ * @exceptions        ERROR_err_NOT_INITIALISED: SysTick driver is not initialized.
  * *************************************************************************************************
  * @return  Nothing
  **************************************************************************************************/
@@ -132,6 +138,8 @@ void CM4_SYSTICK_stop(DRV_ERROR_err_E *outErr);
  *          use ::CM4_SYSTICK_isFinished
  * *************************************************************************************************
  * @param   [out]     *outErr   - Output driver error enumerator
+ * *************************************************************************************************
+ * @exceptions        ERROR_err_NOT_INITIALISED: SysTick driver is not initialized.
  * *************************************************************************************************
  * @return  Current System Cortex Timer value.
  **************************************************************************************************/
@@ -147,6 +155,8 @@ uint32_t CM4_SYSTICK_getCurrentVal(DRV_ERROR_err_E *outErr);
  *          has finished.
  * *************************************************************************************************
  * @param   [out]     *outErr   - Output driver error enumerator
+ * *************************************************************************************************
+ * @exceptions        ERROR_err_NOT_INITIALISED: SysTick driver is not initialized.
  * *************************************************************************************************
  * @return  Flag indicating if timeout has counted to 0 (finished).
  **************************************************************************************************/

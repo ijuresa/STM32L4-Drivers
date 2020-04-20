@@ -33,6 +33,7 @@
  *                      INCLUDE FILES
  **************************************************************************************************/
 #include "typedefs.h"
+#include "string.h"
 
 // DRV
 #include "drv_rcc.h"
@@ -49,6 +50,21 @@
 /***************************************************************************************************
  *                      PRIVATE VARIABLES
  **************************************************************************************************/
+//! Default clock configuration structure. It will be used in case none is supplied
+static DRV_RCC_config_S DRV_RCC_localConfig = {
+    .systemClockSrc = (uint8_t)RCC_sysClk_PLL, //! Use PLL
+    .prescalerAhb = (uint8_t)RCC_AHB_prescaler_1, //! Don't divide on AHB
+    .prescalerApb1 = (uint8_t)RCC_APB_prescaler_1, //! Don't divide on APB1. Use SysClk freq
+    .prescalerApb2 = (uint8_t)RCC_APB_prescaler_1, //! Don't divide on APB2. Use SysClk freq
+    .pllConfig = {
+            .inputClock = (uint8_t)RCC_PLL_inputClock_MSI, //!< Use MSI
+            .clockInputSpeed = 4000000u, //! Use starting MSI frequency 4MHz
+            .pllClk_M = (uint8_t)RCC_PLL_m_1, //! Don't divide input
+
+
+    }
+};
+
 // Reset bit values
 static const uint32_t ahbApbResetVal[RCC_ahb_apb_COUNT] = {
     /*** AHB ***/
@@ -192,6 +208,38 @@ static const uint32_t ahbApbEnVal[RCC_ahb_apb_COUNT] = {
     RCC_APB2ENR_SAI2EN,
     RCC_APB2ENR_DFSDM1EN
 };
+
+//! AHB divider setup values. Check divider possible values at ::DRV_RCC_AHB_prescaler_E
+static const uint32_t ahbDividerVal[RCC_AHB_prescaler_COUNT] = {
+    (0u),                                                                   //! 0xxx
+    (RCC_CFGR_HPRE_3),                                                      //! 1000
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_0),                                    //! 1001
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_1),                                    //! 1010
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_1 | RCC_CFGR_HPRE_0),                  //! 1011
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_2),                                    //! 1100
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_2 | RCC_CFGR_HPRE_0),                  //! 1101
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_2 | RCC_CFGR_HPRE_1),                  //! 1110
+    (RCC_CFGR_HPRE_3 | RCC_CFGR_HPRE_2 | RCC_CFGR_HPRE_1 | RCC_CFGR_HPRE_0) //! 1111
+};
+
+//! APB_01 divider setup values. Check divider possible values at ::DRV_RCC_APB_prescaler_E
+static const uint32_t apbDividerVal_01[RCC_APB_prescaler_COUNT] = {
+    (0u),                                                    //! 0xx
+    (RCC_CFGR_PPRE1_2),                                      //! 100
+    (RCC_CFGR_PPRE1_2 | RCC_CFGR_PPRE1_0),                   //! 101
+    (RCC_CFGR_PPRE1_2 | RCC_CFGR_PPRE1_1),                   //! 110
+    (RCC_CFGR_PPRE1_2 | RCC_CFGR_PPRE1_1 | RCC_CFGR_PPRE1_0) //! 111
+};
+
+//! APB_02 divider setup values. Check divider possible values at ::DRV_RCC_APB_prescaler_E
+static const uint32_t apbDividerVal_02[RCC_APB_prescaler_COUNT] = {
+    (0u),                                                    //! 0xx
+    (RCC_CFGR_PPRE2_2),                                      //! 100
+    (RCC_CFGR_PPRE2_2 | RCC_CFGR_PPRE2_0),                   //! 101
+    (RCC_CFGR_PPRE2_2 | RCC_CFGR_PPRE2_1),                   //! 110
+    (RCC_CFGR_PPRE2_2 | RCC_CFGR_PPRE2_1 | RCC_CFGR_PPRE2_0) //! 111
+};
+
 /***************************************************************************************************
  *                      GLOBAL VARIABLES DEFINITION
  **************************************************************************************************/
@@ -199,12 +247,57 @@ static const uint32_t ahbApbEnVal[RCC_ahb_apb_COUNT] = {
 /***************************************************************************************************
  *                      PRIVATE FUNCTION DECLARATION
  **************************************************************************************************/
+static void RCC_setHsi16(void);
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral);
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral);
 
 /***************************************************************************************************
  *                      PUBLIC FUNCTIONS DEFINITION
  **************************************************************************************************/
+void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
+    if(outErr != NULL_PTR) {
+        if(inConfig != NULL_PTR) {
+            // User submitted custom RCC configuration. Use it
+            (void)memcpy((void *)&DRV_RCC_localConfig, inConfig, sizeof(DRV_RCC_config_S));
+        }
+
+        // Do global checks
+        if((DRV_RCC_localConfig.prescalerAhb >= (uint8_t)RCC_AHB_prescaler_COUNT)
+                || (DRV_RCC_localConfig.prescalerApb1 >= (uint8_t)RCC_APB_prescaler_COUNT)
+                || (DRV_RCC_localConfig.prescalerApb2 >= (uint8_t)RCC_APB_prescaler_COUNT)
+                || (DRV_RCC_localConfig.systemClockSrc >= (uint8_t)RCC_sysClk_COUNT)) {
+            *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+        } else {
+            *outErr = ERROR_err_OK;
+
+            // Set AHB, APB1 and APB2
+            RCC->CFGR |= ahbDividerVal[inConfig->prescalerAhb];
+            RCC->CFGR |= apbDividerVal_01[inConfig->prescalerApb1];
+            RCC->CFGR |= apbDividerVal_02[inConfig->prescalerApb2];
+
+            // Set requested clock
+            switch(DRV_RCC_localConfig.systemClockSrc) {
+                case (uint8_t)RCC_sysClk_HSI_16:
+                    RCC_setHsi16();
+                    break;
+
+                case (uint8_t)RCC_sysClk_MSI:
+                    break;
+
+                case (uint8_t)RCC_sysClk_HSE:
+                    break;
+
+                case (uint8_t)RCC_sysClk_PLL:
+                    break;
+
+                default:
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    break;
+            }
+        }
+    }
+}
+
 void DRV_RCC_peripheralReset(uint8_t inPeripheral, DRV_ERROR_err_E *outErr) {
     uint32_t *ahbApbAddr;
 
@@ -238,7 +331,7 @@ void DRV_RCC_peripheralEnable(uint8_t inPeripheral, bool_t inVal, DRV_ERROR_err_
             ahbApbAddr = RCC_getEnReg(inPeripheral);
 
             // Address needs to be valid
-            if(ahbApbAddr != NULL_PTR) {
+            if((ahbApbAddr != NULL_PTR) && (ahbApbEnVal[inPeripheral] != SNA_VAL)) {
                 if(inVal == TRUE) {
                     // Enable clock
                     *ahbApbAddr |= ahbApbEnVal[inPeripheral];
@@ -256,8 +349,23 @@ void DRV_RCC_peripheralEnable(uint8_t inPeripheral, bool_t inVal, DRV_ERROR_err_
 /***************************************************************************************************
  *                      PRIVATE FUNCTIONS DEFINITION
  **************************************************************************************************/
+static void RCC_setHsi16(void) {
+    // Enable HSI16 clock
+    RCC->CR |= RCC_CR_HSION;
+
+    // Wait for HSI to be ready
+    while(((RCC->CR & RCC_CR_HSIRDY) >> RCC_CR_HSIRDY_Pos) != TRUE);
+
+    // Select HSI16 as a System Clock
+    RCC->CFGR |= (((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSI));
+
+    //! Wait for HW to indicate that HSI is indeed used as a System Clock
+    while(((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI));
+}
+
+
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral) {
-    uint32_t *outRegister;
+    uint32_t *outRegister = NULL_PTR;
 
     switch(inPeripheral) {
         // AHB1
@@ -299,7 +407,7 @@ static uint32_t *RCC_getRstReg(uint8_t inPeripheral) {
 }
 
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral) {
-    uint32_t *outRegister;
+    uint32_t *outRegister = NULL_PTR;
 
     switch(inPeripheral) {
         // AHB1

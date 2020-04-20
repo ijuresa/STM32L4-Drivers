@@ -23,7 +23,7 @@
  **************************************************************************************************
  * @file   drv_rcc.h
  * @author ivan.juresa
- * @brief  
+ * @brief  Reset and Clock Control header file.
  **************************************************************************************************/
 
 #ifndef DRV_RCC_H_
@@ -40,6 +40,13 @@
 /***************************************************************************************************
  *                      DEFINES
  **************************************************************************************************/
+/* Boundaries limitations */
+
+//! VCO input frequency. Controlled with ::DRV_RCC_PLL_m_E
+#define RCC_VCO_INPUT_MIN_FREQ (4u) //!< 4MHz
+#define RCC_VCO_INPUT_MAX_FREQ (16u) //!< 16MHz
+
+//! VCO
 
 /***************************************************************************************************
  *                      ENUMERATIONS
@@ -150,7 +157,7 @@ typedef enum DRV_RCC_sysClk_ENUM {
 
 //! APB division factors. HCLK is divided by it
 typedef enum DRV_RCC_APB_prescaler_ENUM {
-    RCC_APB_prescaler_1     = 0u,
+    RCC_APB_prescaler_1     = 0u, //!< Not divided
     RCC_APB_prescaler_2     = 1u,
     RCC_APB_prescaler_4     = 2u,
     RCC_APB_prescaler_8     = 3u,
@@ -160,7 +167,7 @@ typedef enum DRV_RCC_APB_prescaler_ENUM {
 
 //! AHB division factors. SYSCLK is divided by it
 typedef enum DRV_RCC_AHB_prescaler_ENUM {
-    RCC_AHB_prescaler_1     = 0u,
+    RCC_AHB_prescaler_1     = 0u, //!< Not divided
     RCC_AHB_prescaler_2     = 1u,
     RCC_AHB_prescaler_4     = 2u,
     RCC_AHB_prescaler_8     = 3u,
@@ -229,6 +236,11 @@ typedef enum DRV_RCC_PLL_m_ENUM {
 //! PPL Configuration structure
 typedef struct DRV_RCC_PLL_config_STRUCT {
     uint8_t inputClock; //!< PLL input clock ::DRV_RCC_PLL_inputClock_E
+    uint32_t clockInputSpeed; //!< Clock input speed in KHz
+    uint8_t pllClk_M; //!< Division input clock factor, before the VCO ::DRV_RCC_PLL_m_E. VCO input
+                      //!  frequency ranges must be between 4 and 16MHz
+    uint8_t pllClk_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
+                      //!  frequency should be between 64 and 344MHz
     uint8_t pllClk_R; //!< PLL System clock division ::DRV_RCC_PLL_r_E
     uint8_t pllClk48_Q; //!< PLL 48MHz clock division ::DRV_RCC_PLL_q_E
     bool_t is48ClkUsed; //!< Flag indicating if 48MHz clock will even be used. It can be turned OFF
@@ -236,17 +248,15 @@ typedef struct DRV_RCC_PLL_config_STRUCT {
     uint8_t pllClkSai_P; //!< PLL SAI1 and SAI2 output division factor
     bool_t isSaiClkUsed; //!< Flag indicating if (max) 80MHz clock will even be used. As 48MHz clock
                          //!  it can be turned OFF to save power.
-    uint8_t pllClk_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
-                      //!  frequency should be between 64 and 344MHz
 } DRV_RCC_PLL_config_S;
-
 
 //! RCC Configuration structure
 typedef struct DRV_RCC_config_STRUCT {
     uint8_t systemClockSrc; //!< Chosen clock for System Clock ::DRV_RCC_sysClk_E
+    uint8_t prescalerAhb; //!< ::DRV_RCC_AHB_prescaler_E
     uint8_t prescalerApb1; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t prescalerApb2; //!< ::DRV_RCC_APB_prescaler_E
-    uint8_t prescalerAhb; //!< ::DRV_RCC_AHB_prescaler_E
+    DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
 } DRV_RCC_config_S;
 
 /***************************************************************************************************
@@ -256,6 +266,23 @@ typedef struct DRV_RCC_config_STRUCT {
 /***************************************************************************************************
  *                      PUBLIC FUNCTION PROTOTYPES
  **************************************************************************************************/
+/***************************************************************************************************
+ * @brief   Clock initialization function.
+ * @details Function allows input configuration to be NLL_PTR. In that case it will use default
+ *          static configuration:
+ *
+ *          TODO
+ * *************************************************************************************************
+ * @param   [in]      *inConfig - Pointer to DRV_RCC configuration structure ::DRV_RCC_config_S
+ * @param   [out]     *outErr   - Output driver error enumerator
+ * *************************************************************************************************
+ * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Input peripheral does not exist, out of boundaries
+ *                                                 or reset for that peripheral is not supported.
+ * *************************************************************************************************
+ * @return  Nothing
+ **************************************************************************************************/
+void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+
 /***************************************************************************************************
  * @brief   Function is used to reset input AHB or APB peripheral to its default state.
  * @details Input peripheral will reset its status to the same state as when MCU boots up.

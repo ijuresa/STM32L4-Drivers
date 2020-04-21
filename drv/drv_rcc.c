@@ -240,6 +240,22 @@ static const uint32_t apbDividerVal_02[RCC_APB_prescaler_COUNT] = {
     (RCC_CFGR_PPRE2_2 | RCC_CFGR_PPRE2_1 | RCC_CFGR_PPRE2_0) //! 111
 };
 
+//! MSI clock frequency setup values. Check possible values at ::DRV_RCC_MSI_freq_E
+static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
+    RCC_CR_MSIRANGE_0,
+    RCC_CR_MSIRANGE_1,
+    RCC_CR_MSIRANGE_2,
+    RCC_CR_MSIRANGE_3,
+    RCC_CR_MSIRANGE_4,
+    RCC_CR_MSIRANGE_5,
+    RCC_CR_MSIRANGE_6,
+    RCC_CR_MSIRANGE_7,
+    RCC_CR_MSIRANGE_8,
+    RCC_CR_MSIRANGE_9,
+    RCC_CR_MSIRANGE_10,
+    RCC_CR_MSIRANGE_11
+};
+
 /***************************************************************************************************
  *                      GLOBAL VARIABLES DEFINITION
  **************************************************************************************************/
@@ -247,7 +263,8 @@ static const uint32_t apbDividerVal_02[RCC_APB_prescaler_COUNT] = {
 /***************************************************************************************************
  *                      PRIVATE FUNCTION DECLARATION
  **************************************************************************************************/
-static void RCC_setHsi16(void);
+static void RCC_configureHsi16(void);
+static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral);
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral);
 
@@ -270,18 +287,18 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
         } else {
             *outErr = ERROR_err_OK;
 
-            // Set AHB, APB1 and APB2
-            RCC->CFGR |= ahbDividerVal[inConfig->prescalerAhb];
-            RCC->CFGR |= apbDividerVal_01[inConfig->prescalerApb1];
-            RCC->CFGR |= apbDividerVal_02[inConfig->prescalerApb2];
+            // Flash read latency (Section 3.3.3)
+            // TODO: Add
+//            FLASH->ACR |= FLASH_ACR_LATENCY_4WS;
 
             // Set requested clock
             switch(DRV_RCC_localConfig.systemClockSrc) {
                 case (uint8_t)RCC_sysClk_HSI_16:
-                    RCC_setHsi16();
+                    RCC_configureHsi16();
                     break;
 
                 case (uint8_t)RCC_sysClk_MSI:
+                    RCC_configureMsi(&DRV_RCC_localConfig, outErr);
                     break;
 
                 case (uint8_t)RCC_sysClk_HSE:
@@ -294,6 +311,11 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
                     *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
                     break;
             }
+
+            // Set AHB, APB1 and APB2
+            RCC->CFGR |= ahbDividerVal[DRV_RCC_localConfig.prescalerAhb];
+            RCC->CFGR |= apbDividerVal_01[DRV_RCC_localConfig.prescalerApb1];
+            RCC->CFGR |= apbDividerVal_02[DRV_RCC_localConfig.prescalerApb2];
         }
     }
 }
@@ -349,20 +371,37 @@ void DRV_RCC_peripheralEnable(uint8_t inPeripheral, bool_t inVal, DRV_ERROR_err_
 /***************************************************************************************************
  *                      PRIVATE FUNCTIONS DEFINITION
  **************************************************************************************************/
-static void RCC_setHsi16(void) {
+static void RCC_configureHsi16(void) {
     // Enable HSI16 clock
     RCC->CR |= RCC_CR_HSION;
 
     // Wait for HSI to be ready
-    while(((RCC->CR & RCC_CR_HSIRDY) >> RCC_CR_HSIRDY_Pos) != TRUE);
+    while((RCC->CR & RCC_CR_HSIRDY) != RCC_CR_HSIRDY);
 
     // Select HSI16 as a System Clock
-    RCC->CFGR |= (((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSI));
+    RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSI);
 
     //! Wait for HW to indicate that HSI is indeed used as a System Clock
-    while(((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI));
+    while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI);
 }
 
+static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
+    if(inConfig->msiFreq >= (uint8_t)RCC_MSI_freq_COUNT) {
+        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+    } else {
+        // Use MSIRANGE from RCC_CR register
+        RCC->CR |= RCC_CR_MSIRGSEL;
+
+        // Set MSI requested clock frequency
+        RCC->CR = ((RCC->CR & (~RCC_CR_MSIRANGE)) | msiClockFrequency[inConfig->msiFreq]);;
+
+        // Switch MSI to be used as a System Clock
+        RCC->CFGR |= (RCC->CFGR & (~RCC_CFGR_SW));
+
+        //! Wait for HW to indicate that MSI is indeed used as a System Clock
+        while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_MSI);
+    }
+}
 
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral) {
     uint32_t *outRegister = NULL_PTR;

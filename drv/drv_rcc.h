@@ -256,6 +256,7 @@ typedef struct DRV_RCC_config_STRUCT {
     uint8_t prescalerAhb; //!< ::DRV_RCC_AHB_prescaler_E
     uint8_t prescalerApb1; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t prescalerApb2; //!< ::DRV_RCC_APB_prescaler_E
+    uint8_t msiFreq; //!< ::DRV_RCC_MSI_freq_E
     DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
 } DRV_RCC_config_S;
 

@@ -265,6 +265,7 @@ static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
  **************************************************************************************************/
 static void RCC_configureHsi16(void);
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig);
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral);
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral);
 
@@ -287,9 +288,7 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
         } else {
             *outErr = ERROR_err_OK;
 
-            // Flash read latency (Section 3.3.3)
-            // TODO: Add
-//            FLASH->ACR |= FLASH_ACR_LATENCY_4WS;
+            RCC_configureFlashLatency(&DRV_RCC_localConfig);
 
             // Set requested clock
             switch(DRV_RCC_localConfig.systemClockSrc) {
@@ -401,6 +400,52 @@ static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr
         //! Wait for HW to indicate that MSI is indeed used as a System Clock
         while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_MSI);
     }
+}
+
+/** Flash read latency (Section 3.3.3) **/
+static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig) {
+    // Take default one
+    uint32_t flashLatency = FLASH_ACR_LATENCY_0WS;
+
+    switch(inConfig->systemClockSrc) {
+        case (uint8_t)RCC_sysClk_HSI_16:
+            // Do nothing as HSI_16 is 16MHz and it should have 0WS (Wait Cycles)
+            break;
+
+        case (uint8_t)RCC_sysClk_MSI:
+            // Find speed of MSI
+            switch(inConfig->msiFreq) {
+                case (uint8_t)RCC_MSI_freq_100kHz ... (uint8_t)RCC_MSI_freq_16MHz:
+                    // Same as HSI_16. Do nothing
+                    break;
+
+                case (uint8_t)RCC_MSI_freq_24MHz:
+                case (uint8_t)RCC_MSI_freq_32MHz:
+                    flashLatency = FLASH_ACR_LATENCY_1WS;
+                    break;
+
+                case (uint8_t)RCC_MSI_freq_48MHz:
+                    flashLatency = FLASH_ACR_LATENCY_2WS;
+                    break;
+
+                default:
+                    // Should never happen
+                    break;
+            }
+            break;
+
+        case (uint8_t)RCC_sysClk_HSE:
+            break;
+
+        case (uint8_t)RCC_sysClk_PLL:
+                break;
+
+        default:
+        // Should never get here
+        break;
+    }
+
+    FLASH->ACR |= flashLatency;
 }
 
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral) {

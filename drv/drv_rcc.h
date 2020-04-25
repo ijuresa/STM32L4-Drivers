@@ -236,7 +236,7 @@ typedef enum DRV_RCC_PLL_m_ENUM {
 //! PPL Configuration structure
 typedef struct DRV_RCC_PLL_config_STRUCT {
     uint8_t inputClock; //!< PLL input clock ::DRV_RCC_PLL_inputClock_E
-    uint32_t clockInputSpeed; //!< Clock input speed in KHz
+    uint8_t clockInputSpeed; //!< Clock input speed in MHz
     uint8_t pllClk_M; //!< Division input clock factor, before the VCO ::DRV_RCC_PLL_m_E. VCO input
                       //!  frequency ranges must be between 4 and 16MHz
     uint8_t pllClk_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
@@ -250,14 +250,22 @@ typedef struct DRV_RCC_PLL_config_STRUCT {
                          //!  it can be turned OFF to save power.
 } DRV_RCC_PLL_config_S;
 
+//! MSI Configuration structure
+typedef struct DRV_RCC_MSI_config_STRUCT {
+    uint8_t freq; //!< ::DRV_RCC_MSI_freq_E
+    bool_t hwAutoCalibration; //!< Flag indicating if MSI will be auto calibrated using LSE external
+                              //!  oscillator
+} DRV_RCC_MSI_config_S;
+
 //! RCC Configuration structure
 typedef struct DRV_RCC_config_STRUCT {
     uint8_t systemClockSrc; //!< Chosen clock for System Clock ::DRV_RCC_sysClk_E
     uint8_t prescalerAhb; //!< ::DRV_RCC_AHB_prescaler_E
     uint8_t prescalerApb1; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t prescalerApb2; //!< ::DRV_RCC_APB_prescaler_E
-    uint8_t msiFreq; //!< ::DRV_RCC_MSI_freq_E
+    uint8_t hseFreq; //!< Frequency of HSE oscillator. 4MHz - 48MHz
     DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
+    DRV_RCC_MSI_config_S msiConfig; //!< MSI configuration structure
 } DRV_RCC_config_S;
 
 /***************************************************************************************************

@@ -43,6 +43,12 @@
  **************************************************************************************************/
 #define SNA_VAL (0xFFu) //!< Signal not available value. Used when some feature is not supported
 
+#define FLASH_LATENCY_WS_16 (16u) //!< Wait 1 CPU Clock Cycle for frequencies below or 16MHz
+#define FLASH_LATENCY_WS_32 (32u) //!< Wait 2 CPU Clock Cycle for frequencies below or 32MHz
+#define FLASH_LATENCY_WS_48 (48u) //!< Wait 3 CPU Clock Cycle for frequencies below or 48MHz
+#define FLASH_LATENCY_WS_64 (64u) //!< Wait 4 CPU Clock Cycle for frequencies below or 64MHz
+#define FLASH_LATENCY_WS_80 (80u) //!< Wait 5 CPU Clock Cycle for frequencies below or 80MHz
+
 /***************************************************************************************************
  *                      PRIVATE DATA TYPES
  **************************************************************************************************/
@@ -265,6 +271,9 @@ static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
  **************************************************************************************************/
 static void RCC_configureHsi16(void);
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_configureHse(void);
+static void RCC_configurePll(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_configureLse(DRV_ERROR_err_E *outErr);
 static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig);
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral);
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral);
@@ -301,6 +310,7 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
                     break;
 
                 case (uint8_t)RCC_sysClk_HSE:
+                    RCC_configureHse();
                     break;
 
                 case (uint8_t)RCC_sysClk_PLL:
@@ -385,21 +395,65 @@ static void RCC_configureHsi16(void) {
 }
 
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
-    if(inConfig->msiFreq >= (uint8_t)RCC_MSI_freq_COUNT) {
+    if(inConfig->msiConfig.freq >= (uint8_t)RCC_MSI_freq_COUNT) {
         *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
     } else {
         // Use MSIRANGE from RCC_CR register
         RCC->CR |= RCC_CR_MSIRGSEL;
 
         // Set MSI requested clock frequency
-        RCC->CR = ((RCC->CR & (~RCC_CR_MSIRANGE)) | msiClockFrequency[inConfig->msiFreq]);;
+        RCC->CR = ((RCC->CR & (~RCC_CR_MSIRANGE)) | msiClockFrequency[inConfig->msiConfig.freq]);
 
         // Switch MSI to be used as a System Clock
         RCC->CFGR |= (RCC->CFGR & (~RCC_CFGR_SW));
 
         //! Wait for HW to indicate that MSI is indeed used as a System Clock
         while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_MSI);
+
+        if(inConfig->msiConfig.hwAutoCalibration == TRUE) {
+            // Configure LSE for hardware auto calibration
+            RCC_configureLse(outErr);
+
+            // Select PLL Mode
+            RCC->CR |= RCC_CR_MSIPLLEN;
+        }
     }
+}
+
+static void RCC_configureHse(void) {
+    // Enable HSE
+    RCC->CR |= RCC_CR_HSEON;
+
+    // Wait until its ready
+    while((RCC->CR & RCC_CR_HSERDY) != RCC_CR_HSERDY);
+
+    // Switch HSE to be used as a System Clock
+    RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSE);
+
+    //! Wait for HW to indicate that HSE is indeed used as a System Clock
+    while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SW_HSE);
+}
+
+static void RCC_configurePll(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
+    // Check input clock and its frequency
+
+}
+
+static void RCC_configureLse(DRV_ERROR_err_E *outErr) {
+    // Enable Power Control (PWR) peripheral first
+    DRV_RCC_peripheralEnable((uint8_t)RCC_apb_PWR, TRUE, outErr);
+
+    // After reset Backup Domain registers are write protected. Enable writes
+    PWR->CR1 |= PWR_CR1_DBP;
+
+    // Enable LSE
+    RCC->BDCR |= RCC_BDCR_LSEON;
+
+    // Wait for HW to notify that LSE is stable
+    while((RCC->BDCR & (RCC_BDCR_LSERDY)) != RCC_BDCR_LSERDY);
+
+    // Set protection back
+    PWR->CR1 &= ~PWR_CR1_DBP;
 }
 
 /** Flash read latency (Section 3.3.3) **/
@@ -414,7 +468,7 @@ static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig) {
 
         case (uint8_t)RCC_sysClk_MSI:
             // Find speed of MSI
-            switch(inConfig->msiFreq) {
+            switch(inConfig->msiConfig.freq) {
                 case (uint8_t)RCC_MSI_freq_100kHz ... (uint8_t)RCC_MSI_freq_16MHz:
                     // Same as HSI_16. Do nothing
                     break;
@@ -435,6 +489,14 @@ static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig) {
             break;
 
         case (uint8_t)RCC_sysClk_HSE:
+            if(inConfig->hseFreq <= FLASH_LATENCY_WS_16) {
+                // Do nothing as this is default value
+            } else if(inConfig->hseFreq <= FLASH_LATENCY_WS_32) {
+                flashLatency = FLASH_ACR_LATENCY_1WS;
+            } else {
+                // HSE is not supposed to be above 48MHz
+                flashLatency = FLASH_ACR_LATENCY_2WS;
+            }
             break;
 
         case (uint8_t)RCC_sysClk_PLL:

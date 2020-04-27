@@ -22,8 +22,8 @@
  * SOFTWARE.
  **************************************************************************************************
  * @file   drv_rcc.c
- * @author ivan.juresa
- * @brief  
+ * @author ivan.juresa (scaluza.com)
+ * @brief  Driver will initialize Clock for STM32L4 processor.
  **************************************************************************************************/
 
 #ifndef DRV_RCC_C_
@@ -49,6 +49,8 @@
 #define FLASH_LATENCY_WS_64 (64u) //!< Wait 4 CPU Clock Cycle for frequencies below or 64MHz
 #define FLASH_LATENCY_WS_80 (80u) //!< Wait 5 CPU Clock Cycle for frequencies below or 80MHz
 
+#define RCC_KHZ_IN_MHZ (1000000u) //!< Used to convert KHz to MHz and vice versa
+
 /***************************************************************************************************
  *                      PRIVATE DATA TYPES
  **************************************************************************************************/
@@ -63,13 +65,19 @@ static DRV_RCC_config_S DRV_RCC_localConfig = {
     .prescalerApb1 = (uint8_t)RCC_APB_prescaler_1, //! Don't divide on APB1. Use SysClk freq
     .prescalerApb2 = (uint8_t)RCC_APB_prescaler_1, //! Don't divide on APB2. Use SysClk freq
     .pllConfig = {
-            .inputClock = (uint8_t)RCC_PLL_inputClock_MSI, //!< Use MSI
-            .clockInputSpeed = 4000000u, //! Use starting MSI frequency 4MHz
-            .pllClk_M = (uint8_t)RCC_PLL_m_1, //! Don't divide input
 
 
     }
 };
+
+//! VCO Input Clock Frequency = (PLL_clock_input / PLL_M)
+static fp32_t vcoPllInputClockFreq[RCC_PLL_device_COUNT] = { 0.0f, 0.0f, 0.0f };
+
+//! VCO Output Clock Frequency = (VCO_input_clock_frequency * PLL_N)
+static fp32_t vcoPllOutputClockFreq[RCC_PLL_device_COUNT] = { 0.0f, 0.0f, 0.0f };
+
+//! SysClk frequency in case PLL is used
+static fp32_t pllSysClk = 0u;
 
 // Reset bit values
 static const uint32_t ahbApbResetVal[RCC_ahb_apb_COUNT] = {
@@ -262,6 +270,9 @@ static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
     RCC_CR_MSIRANGE_11
 };
 
+//! Flag indicating if any PLL output is used
+static bool_t isPllUsed = FALSE;
+
 /***************************************************************************************************
  *                      GLOBAL VARIABLES DEFINITION
  **************************************************************************************************/
@@ -272,11 +283,14 @@ static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
 static void RCC_configureHsi16(void);
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
 static void RCC_configureHse(void);
-static void RCC_configurePll(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
 static void RCC_configureLse(DRV_ERROR_err_E *outErr);
+static void RCC_setAsSystemClock(uint8_t inSysClkSrc, DRV_ERROR_err_E *outErr);
 static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig);
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral);
 static uint32_t *RCC_getEnReg(uint8_t inPeripheral);
+static uint32_t RCC_getMsiFrequency(uint8_t inMsiFreq, DRV_ERROR_err_E *outErr);
 
 /***************************************************************************************************
  *                      PUBLIC FUNCTIONS DEFINITION
@@ -296,35 +310,62 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
             *outErr = ERROR_err_OK;
+            /*
+             * By default disable all PLL outputs as they can be used even though Main PLL is not
+             *  used a System Clock
+             */
+            // Disable MAIN, SAI1 and SAI2 PLL
+            RCC->CFGR &= ((~RCC_CR_PLLON) & (~RCC_CR_PLLSAI1ON) & (~RCC_CR_PLLSAI2ON));
 
-            RCC_configureFlashLatency(&DRV_RCC_localConfig);
+            // Wait for PLL to stop
+            while((RCC->CFGR & (~RCC_CR_PLLRDY)) != RCC_CR_PLLRDY);
 
-            // Set requested clock
-            switch(DRV_RCC_localConfig.systemClockSrc) {
-                case (uint8_t)RCC_sysClk_HSI_16:
-                    RCC_configureHsi16();
-                    break;
-
-                case (uint8_t)RCC_sysClk_MSI:
-                    RCC_configureMsi(&DRV_RCC_localConfig, outErr);
-                    break;
-
-                case (uint8_t)RCC_sysClk_HSE:
-                    RCC_configureHse();
-                    break;
-
-                case (uint8_t)RCC_sysClk_PLL:
-                    break;
-
-                default:
-                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
-                    break;
+            if(DRV_RCC_localConfig.systemClockSrc == (uint8_t)RCC_sysClk_PLL) {
+                // In case developer is trying to use PLL as a System Clock but forgot to enable it
+                DRV_RCC_localConfig.pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_R = TRUE;
             }
 
-            // Set AHB, APB1 and APB2
-            RCC->CFGR |= ahbDividerVal[DRV_RCC_localConfig.prescalerAhb];
-            RCC->CFGR |= apbDividerVal_01[DRV_RCC_localConfig.prescalerApb1];
-            RCC->CFGR |= apbDividerVal_02[DRV_RCC_localConfig.prescalerApb2];
+            // Do universal PLL VCO calculations, in case PLL is used
+            RCC_calculatePllVco(&DRV_RCC_localConfig, outErr);
+
+            // Configure PLL Devices
+            RCC_configurePllClocks(&DRV_RCC_localConfig, outErr);
+
+            if(*outErr == ERROR_err_OK) {
+                // Set requested clock
+                switch(DRV_RCC_localConfig.systemClockSrc) {
+                    case (uint8_t)RCC_sysClk_HSI_16:
+                        RCC_configureHsi16();
+                        break;
+
+                    case (uint8_t)RCC_sysClk_MSI:
+                        RCC_configureMsi(&DRV_RCC_localConfig, outErr);
+                        break;
+
+                    case (uint8_t)RCC_sysClk_HSE:
+                        RCC_configureHse();
+                        break;
+
+                    case (uint8_t)RCC_sysClk_PLL:
+                        // PLL is configured before switch case as there are multiple devices and
+                        // clocks which are not dependent.
+                        break;
+
+                    default:
+                        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                        break;
+                }
+            }
+
+            if(*outErr == ERROR_err_OK) {
+                RCC_configureFlashLatency(&DRV_RCC_localConfig);
+                RCC_setAsSystemClock(DRV_RCC_localConfig.systemClockSrc, outErr);
+
+                // Set AHB, APB1 and APB2
+                RCC->CFGR |= ahbDividerVal[DRV_RCC_localConfig.prescalerAhb];
+                RCC->CFGR |= apbDividerVal_01[DRV_RCC_localConfig.prescalerApb1];
+                RCC->CFGR |= apbDividerVal_02[DRV_RCC_localConfig.prescalerApb2];
+            }
         }
     }
 }
@@ -386,12 +427,6 @@ static void RCC_configureHsi16(void) {
 
     // Wait for HSI to be ready
     while((RCC->CR & RCC_CR_HSIRDY) != RCC_CR_HSIRDY);
-
-    // Select HSI16 as a System Clock
-    RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSI);
-
-    //! Wait for HW to indicate that HSI is indeed used as a System Clock
-    while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI);
 }
 
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
@@ -404,18 +439,14 @@ static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr
         // Set MSI requested clock frequency
         RCC->CR = ((RCC->CR & (~RCC_CR_MSIRANGE)) | msiClockFrequency[inConfig->msiConfig.freq]);
 
-        // Switch MSI to be used as a System Clock
-        RCC->CFGR |= (RCC->CFGR & (~RCC_CFGR_SW));
-
-        //! Wait for HW to indicate that MSI is indeed used as a System Clock
-        while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_MSI);
-
         if(inConfig->msiConfig.hwAutoCalibration == TRUE) {
             // Configure LSE for hardware auto calibration
             RCC_configureLse(outErr);
 
-            // Select PLL Mode
-            RCC->CR |= RCC_CR_MSIPLLEN;
+            if(*outErr == ERROR_err_OK) {
+                // Select PLL Mode
+                RCC->CR |= RCC_CR_MSIPLLEN;
+            }
         }
     }
 }
@@ -426,34 +457,206 @@ static void RCC_configureHse(void) {
 
     // Wait until its ready
     while((RCC->CR & RCC_CR_HSERDY) != RCC_CR_HSERDY);
-
-    // Switch HSE to be used as a System Clock
-    RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSE);
-
-    //! Wait for HW to indicate that HSE is indeed used as a System Clock
-    while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SW_HSE);
 }
 
-static void RCC_configurePll(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
-    // Check input clock and its frequency
+static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
+    if(isPllUsed == TRUE) {
+        // Write PLLM which is shared across all PLL devices
+        RCC->CFGR |= (inConfig->pllConfig.pllClk_M << RCC_PLLCFGR_PLLM_Pos);
 
+        /* Start will MAIN PLL device */
+        if(inConfig->pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_R == TRUE) {
+            // PLL is used as a System clock. Configure used clock
+            switch(inConfig->pllConfig.inputClock) {
+                case (uint8_t)RCC_PLL_inputClock_MSI:
+                    RCC_configureMsi(inConfig, outErr);
+                    break;
+
+                case (uint8_t)RCC_PLL_inputClock_HSI_16:
+                    RCC_configureHsi16();
+                    break;
+
+                case (uint8_t)RCC_PLL_inputClock_HSE:
+                    RCC_configureHse();
+                    break;
+
+                default:
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    break;
+            }
+
+            // Write divider for SYSCLK. PLLR
+            RCC->CFGR |= (inConfig->pllConfig.config[RCC_PLL_device_MAIN].pll_R << RCC_PLLCFGR_PLLR_Pos);
+        } else {
+            // Disable it to save power
+        }
+
+        if(inConfig->pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_Q == TRUE) {
+            RCC->CFGR &= ~RCC_PLLCFGR_PLLQEN;
+        }
+    }
+}
+
+static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
+    uint8_t inputRawFreq;
+    fp32_t lVcoInputFreq;
+    fp32_t lVcoOutputFreq;
+    // Flags indicating if any output is used on certain PLL device
+    bool_t isUsed[RCC_PLL_device_COUNT];
+    uint8_t i;
+
+    if(inConfig->pllConfig.pllClk_M >= (uint8_t)RCC_PLL_m_COUNT) {
+        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+    } else {
+        for(i = 0; i < (uint8_t)RCC_PLL_device_COUNT; i ++) {
+            // Check if any output clock will be used
+            if((inConfig->pllConfig.config[i].isClkUsed_R == TRUE)
+                || (inConfig->pllConfig.config[i].isClkUsed_Q == TRUE)
+                || (inConfig->pllConfig.config[i].isClkUsed_P == TRUE)) {
+                // Some output on current PLL will be used
+                if((inConfig->pllConfig.config[i].pll_N < DRV_RCC_PLL_N_MIN)
+                        || (inConfig->pllConfig.config[i].pll_N > DRV_RCC_PLL_N_MAX)) {
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                }
+                isUsed[i] = TRUE;
+                isPllUsed = TRUE;
+            } else {
+                isUsed[i] = FALSE;
+            }
+
+            // Check now independent outputs
+            if(inConfig->pllConfig.config[i].isClkUsed_R == TRUE) {
+                if(inConfig->pllConfig.config[i].pll_R >= (uint8_t)RCC_PLL_r_COUNT) {
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                }
+            }
+
+            if(inConfig->pllConfig.config[i].isClkUsed_Q == TRUE) {
+                if(inConfig->pllConfig.config[i].pll_Q >= (uint8_t)RCC_PLL_q_COUNT) {
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                }
+            }
+
+            if(inConfig->pllConfig.config[i].isClkUsed_P == TRUE) {
+                if(inConfig->pllConfig.config[i].pll_P >= (uint8_t)RCC_PLL_p_COUNT) {
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                }
+            }
+        }
+    }
+
+    if((*outErr == ERROR_err_OK) && (isPllUsed == TRUE)) {
+        // Figure out by which clock we are supplied and how fast it is
+        switch(inConfig->pllConfig.inputClock) {
+            case (uint8_t)RCC_PLL_inputClock_MSI:
+                // VCO input frequency must be between 4MHz and 16MHz so if MSI is below 4MHz its unusable
+                if(inConfig->msiConfig.freq < (uint8_t)RCC_MSI_freq_4MHz) {
+                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                } else {
+                    // Get frequency in KHz and convert it to MHz
+                    inputRawFreq = (RCC_getMsiFrequency(inConfig->msiConfig.freq, outErr) / RCC_KHZ_IN_MHZ);
+                }
+                break;
+
+            case (uint8_t)RCC_PLL_inputClock_HSI_16:
+                // HSI has default frequency of 16MHz
+                inputRawFreq = DRV_RCC_HSI16_FREQUENCY_MHZ;
+                break;
+
+            case (uint8_t)RCC_PLL_inputClock_HSE:
+                inputRawFreq = inConfig->hseFreq;
+                break;
+
+            default:
+                *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                break;
+        }
+
+        if(*outErr == ERROR_err_OK) {
+            // Calculate VCO frequencies
+            for(i = 0; i < (uint8_t)RCC_PLL_device_COUNT; i ++) {
+                if(isUsed[i] == TRUE) {
+                    // Calculate VCO Input frequency
+                    lVcoInputFreq = inputRawFreq / inConfig->pllConfig.pllClk_M;
+                    if((lVcoInputFreq < RCC_VCO_INPUT_MIN_FREQ)
+                            || (lVcoInputFreq > RCC_VCO_INPUT_MAX_FREQ)) {
+                        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    } else {
+                        vcoPllInputClockFreq[i] = lVcoInputFreq;
+                    }
+
+                    if(*outErr == ERROR_err_OK) {
+                        // Calculate VCO Output frequency
+                        lVcoOutputFreq *= inConfig->pllConfig.config[i].pll_N;
+
+                        // Check for VCO output frequency
+                        if((lVcoOutputFreq < RCC_VCO_OUTPUT_MIN_FREQ)
+                                || (lVcoOutputFreq > RCC_VCO_OUTPUT_MAX_FREQ)) {
+                            *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                        } else {
+                            vcoPllOutputClockFreq[i] = lVcoOutputFreq;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 static void RCC_configureLse(DRV_ERROR_err_E *outErr) {
-    // Enable Power Control (PWR) peripheral first
+    // Enable Clock for Power Control (PWR) peripheral first
     DRV_RCC_peripheralEnable((uint8_t)RCC_apb_PWR, TRUE, outErr);
 
-    // After reset Backup Domain registers are write protected. Enable writes
-    PWR->CR1 |= PWR_CR1_DBP;
+    if(*outErr == ERROR_err_OK) {
+        // After reset Backup Domain registers are write protected. Enable writes
+        PWR->CR1 |= PWR_CR1_DBP;
 
-    // Enable LSE
-    RCC->BDCR |= RCC_BDCR_LSEON;
+        // Enable LSE
+        RCC->BDCR |= RCC_BDCR_LSEON;
 
-    // Wait for HW to notify that LSE is stable
-    while((RCC->BDCR & (RCC_BDCR_LSERDY)) != RCC_BDCR_LSERDY);
+        // Wait for HW to notify that LSE is stable
+        while((RCC->BDCR & (RCC_BDCR_LSERDY)) != RCC_BDCR_LSERDY);
 
-    // Set protection back
-    PWR->CR1 &= ~PWR_CR1_DBP;
+        // Set protection back
+        PWR->CR1 &= ~PWR_CR1_DBP;
+
+        // Disable Clock for peripheral
+        DRV_RCC_peripheralEnable((uint8_t)RCC_apb_PWR, FALSE, outErr);
+    }
+}
+
+static void RCC_setAsSystemClock(uint8_t inSysClkSrc, DRV_ERROR_err_E *outErr) {
+    switch(inSysClkSrc) {
+        case (uint8_t)RCC_sysClk_HSI_16:
+            // Select HSI16 as a System Clock
+            RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSI);
+
+            // Wait for HW to indicate that HSI is indeed used as a System Clock
+            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI);
+            break;
+
+        case (uint8_t)RCC_sysClk_MSI:
+            // Switch MSI to be used as a System Clock
+            RCC->CFGR |= (RCC->CFGR & (~RCC_CFGR_SW));
+
+            // Wait for HW to indicate that MSI is indeed used as a System Clock
+            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_MSI);
+            break;
+
+        case (uint8_t)RCC_sysClk_HSE:
+            // Switch HSE to be used as a System Clock
+            RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSE);
+
+            // Wait for HW to indicate that HSE is indeed used as a System Clock
+            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SW_HSE);
+            break;
+
+        case (uint8_t)RCC_sysClk_PLL:
+            break;
+
+        default:
+            *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+    }
 }
 
 /** Flash read latency (Section 3.3.3) **/
@@ -500,7 +703,18 @@ static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig) {
             break;
 
         case (uint8_t)RCC_sysClk_PLL:
-                break;
+            if(pllSysClk <= FLASH_LATENCY_WS_16) {
+                // Do nothing as this is default value
+            } else if(pllSysClk <= FLASH_LATENCY_WS_32) {
+                flashLatency = FLASH_ACR_LATENCY_1WS;
+            } else if(pllSysClk <= FLASH_LATENCY_WS_48) {
+                flashLatency = FLASH_ACR_LATENCY_2WS;
+            } else if(pllSysClk <= FLASH_LATENCY_WS_64) {
+                flashLatency = FLASH_ACR_LATENCY_3WS;
+            } else {
+                flashLatency = FLASH_ACR_LATENCY_4WS;
+            }
+            break;
 
         default:
         // Should never get here
@@ -592,6 +806,34 @@ static uint32_t *RCC_getEnReg(uint8_t inPeripheral) {
     };
 
     return outRegister;
+}
+
+static uint32_t RCC_getMsiFrequency(uint8_t inMsiFreq, DRV_ERROR_err_E *outErr) {
+    // Output frequency in KHz
+    uint32_t outFreq;
+
+    static const uint32_t msiFreq[RCC_MSI_freq_COUNT] = {
+        100000u,   //! RCC_MSI_freq_100kHz
+        200000u,   //! RCC_MSI_freq_200kHz
+        400000u,   //! RCC_MSI_freq_400kHz
+        800000u,   //! RCC_MSI_freq_800kHz
+        1000000u,  //! RCC_MSI_freq_1MHz
+        2000000u,  //! RCC_MSI_freq_2MHz
+        4000000u,  //! RCC_MSI_freq_4MHz
+        8000000u,  //! RCC_MSI_freq_8MHz
+        16000000u, //! RCC_MSI_freq_16MHz
+        24000000u, //! RCC_MSI_freq_24MHz
+        32000000u, //! RCC_MSI_freq_32MHz
+        48000000u  //! RCC_MSI_freq_48MHz
+    };
+
+    if(inMsiFreq < (uint8_t)RCC_MSI_freq_COUNT) {
+        outFreq = msiFreq[inMsiFreq];
+    } else {
+        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+    }
+
+    return outFreq;
 }
 
 #endif // DRV_RCC_C

@@ -22,7 +22,7 @@
  * SOFTWARE.
  **************************************************************************************************
  * @file   drv_rcc.h
- * @author ivan.juresa
+ * @author ivan.juresa (scaluza.com)
  * @brief  Reset and Clock Control header file.
  **************************************************************************************************/
 
@@ -40,13 +40,24 @@
 /***************************************************************************************************
  *                      DEFINES
  **************************************************************************************************/
+#define DRV_RCC_HSI16_FREQUENCY_MHZ (16u) //!< Default frequency of HSI16 oscillator
+
+#define DRV_RCC_SYSCLK_MAX_FREQ (80) //!< Maximum frequency on System Clock
+#define DRV_RCC_PLL_48_MHZ_CLK_FRQ (48) //!< In case 48MHz is used
+
 /* Boundaries limitations */
 
+//! PLL_N
+#define DRV_RCC_PLL_N_MIN (8u)
+#define DRV_RCC_PLL_N_MAX (86)
+
 //! VCO input frequency. Controlled with ::DRV_RCC_PLL_m_E
-#define RCC_VCO_INPUT_MIN_FREQ (4u) //!< 4MHz
+#define RCC_VCO_INPUT_MIN_FREQ (4u)  //!< 4MHz
 #define RCC_VCO_INPUT_MAX_FREQ (16u) //!< 16MHz
 
-//! VCO
+//! VCO output frequency
+#define RCC_VCO_OUTPUT_MIN_FREQ (64u)  //!< 64MHz
+#define RCC_VCO_OUTPUT_MAX_FREQ (344u) //!< 344MHz
 
 /***************************************************************************************************
  *                      ENUMERATIONS
@@ -226,6 +237,14 @@ typedef enum DRV_RCC_PLL_m_ENUM {
     RCC_PLL_m_COUNT = 8u
 } DRV_RCC_PLL_m_E;
 
+//! PLL devices
+typedef enum DRV_RCC_PLL_device_ENUM {
+    RCC_PLL_device_MAIN  = 0u,
+    RCC_PLL_device_SAI1  = 1u,
+    RCC_PLL_device_SAI2  = 2u,
+    RCC_PLL_device_COUNT = 3u
+} DRV_RCC_PLL_device_E;
+
 /***************************************************************************************************
  *                      DATA TYPES
  **************************************************************************************************/
@@ -233,29 +252,34 @@ typedef enum DRV_RCC_PLL_m_ENUM {
 /***************************************************************************************************
  *                      DATA STRUCTURES
  **************************************************************************************************/
+//! PLL Configuration structure
+typedef struct RCC_PLL_config_STRUCT {
+    uint32_t pll_R; //!< Clock division, SysClk or ADCs ::DRV_RCC_PLL_r_E.
+    uint32_t pll_Q; //!< 48MHz clock division ::DRV_RCC_PLL_q_E
+    uint32_t pll_P; //!< PLL SAI1 and SAI2 output division factor ::DRV_RCC_PLL_p_E
+    uint32_t pll_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
+                       //!  frequency should be between 64 and 344MHz
+
+    //! If not used clocks should be turned OFF to save power
+    bool_t isClkUsed_R; //!< Flag indicating if PLL output clock with R division factor is used
+    bool_t isClkUsed_Q; //!< Flag indicating if PLL output clock with Q division factor is used
+    bool_t isClkUsed_P; //!< Flag indicating if PLL output clock with P division factor is used
+} RCC_PLL_config_S;
+
 //! PPL Configuration structure
 typedef struct DRV_RCC_PLL_config_STRUCT {
     uint8_t inputClock; //!< PLL input clock ::DRV_RCC_PLL_inputClock_E
-    uint8_t clockInputSpeed; //!< Clock input speed in MHz
-    uint8_t pllClk_M; //!< Division input clock factor, before the VCO ::DRV_RCC_PLL_m_E. VCO input
-                      //!  frequency ranges must be between 4 and 16MHz
-    uint8_t pllClk_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
-                      //!  frequency should be between 64 and 344MHz
-    uint8_t pllClk_R; //!< PLL System clock division ::DRV_RCC_PLL_r_E
-    uint8_t pllClk48_Q; //!< PLL 48MHz clock division ::DRV_RCC_PLL_q_E
-    bool_t is48ClkUsed; //!< Flag indicating if 48MHz clock will even be used. It can be turned OFF
-                        //!  to save power. It is used for USB, RNG and SDMMC (SD/SDIO/MMC)
-    uint8_t pllClkSai_P; //!< PLL SAI1 and SAI2 output division factor
-    bool_t isSaiClkUsed; //!< Flag indicating if (max) 80MHz clock will even be used. As 48MHz clock
-                         //!  it can be turned OFF to save power.
+    uint32_t pllClk_M; //!< Division input clock factor, before the VCO ::DRV_RCC_PLL_m_E. VCO input
+                       //!  frequency ranges must be between 4 and 16MHz
+    RCC_PLL_config_S config[RCC_PLL_device_COUNT]; //!< Configuration structures for PLL devices
 } DRV_RCC_PLL_config_S;
 
 //! MSI Configuration structure
-typedef struct DRV_RCC_MSI_config_STRUCT {
+typedef struct RCC_MSI_config_STRUCT {
     uint8_t freq; //!< ::DRV_RCC_MSI_freq_E
     bool_t hwAutoCalibration; //!< Flag indicating if MSI will be auto calibrated using LSE external
                               //!  oscillator
-} DRV_RCC_MSI_config_S;
+} RCC_MSI_config_S;
 
 //! RCC Configuration structure
 typedef struct DRV_RCC_config_STRUCT {
@@ -265,7 +289,7 @@ typedef struct DRV_RCC_config_STRUCT {
     uint8_t prescalerApb2; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t hseFreq; //!< Frequency of HSE oscillator. 4MHz - 48MHz
     DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
-    DRV_RCC_MSI_config_S msiConfig; //!< MSI configuration structure
+    RCC_MSI_config_S msiConfig; //!< MSI configuration structure
 } DRV_RCC_config_S;
 
 /***************************************************************************************************

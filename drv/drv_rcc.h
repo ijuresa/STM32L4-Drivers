@@ -199,23 +199,14 @@ typedef enum DRV_RCC_PLL_inputClock_ENUM {
     RCC_PLL_inputClock_COUNT  = 3u
 } DRV_RCC_PLL_inputClock_E;
 
-//! Main PLL division factor for PLLCLK (System Clock)
-typedef enum DRV_RCC_PLL_r_ENUM {
-    RCC_PLL_r_2     = 0u,
-    RCC_PLL_r_4     = 1u,
-    RCC_PLL_r_6     = 2u,
-    RCC_PLL_r_8     = 3u,
-    RCC_PLL_r_COUNT = 4u,
-} DRV_RCC_PLL_r_E;
-
-//! Main PLL division factor for PLL48M1CLK (48MHz clock)
-typedef enum DRV_RCC_PLL_q_ENUM {
-    RCC_PLL_q_2     = 0u,
-    RCC_PLL_q_4     = 1u,
-    RCC_PLL_q_6     = 2u,
-    RCC_PLL_q_8     = 3u,
-    RCC_PLL_q_COUNT = 4u,
-} DRV_RCC_PLL_q_E;
+//! PLL division factor for PLLCLK (System Clock) or (48MHz clock)
+typedef enum DRV_RCC_PLL_r_q_ENUM {
+    RCC_PLL_r_q_2     = 0u,
+    RCC_PLL_r_q_4     = 1u,
+    RCC_PLL_r_q_6     = 2u,
+    RCC_PLL_r_q_8     = 3u,
+    RCC_PLL_r_q_COUNT = 4u,
+} DRV_RCC_PLL_r_q_E;
 
 //! Main PLL division factor for PLLSAI3CLK (SAI1 and SAI2 clock)
 typedef enum DRV_RCC_PLL_p_ENUM {
@@ -245,6 +236,14 @@ typedef enum DRV_RCC_PLL_device_ENUM {
     RCC_PLL_device_COUNT = 3u
 } DRV_RCC_PLL_device_E;
 
+//! PLL Outputs
+typedef enum DRV_RCC_PLL_output_ENUM {
+    RCC_PLL_output_R     = 0u,
+    RCC_PLL_output_Q     = 1u,
+    RCC_PLL_output_P     = 2u,
+    RCC_PLL_output_COUNT = 3u
+} DRV_RCC_PLL_output_E;
+
 /***************************************************************************************************
  *                      DATA TYPES
  **************************************************************************************************/
@@ -254,8 +253,8 @@ typedef enum DRV_RCC_PLL_device_ENUM {
  **************************************************************************************************/
 //! PLL Configuration structure
 typedef struct RCC_PLL_config_STRUCT {
-    uint32_t pll_R; //!< Clock division, SysClk or ADCs ::DRV_RCC_PLL_r_E.
-    uint32_t pll_Q; //!< 48MHz clock division ::DRV_RCC_PLL_q_E
+    uint32_t pll_R; //!< Clock division, SysClk or ADCs ::RCC_PLL_r_q_COUNT.
+    uint32_t pll_Q; //!< 48MHz clock division ::RCC_PLL_r_q_COUNT
     uint32_t pll_P; //!< PLL SAI1 and SAI2 output division factor ::DRV_RCC_PLL_p_E
     uint32_t pll_N; //!< Main VCO multiplication factor. (8 - 86 are valid values). VCO output
                        //!  frequency should be between 64 and 344MHz
@@ -288,8 +287,8 @@ typedef struct DRV_RCC_config_STRUCT {
     uint8_t prescalerApb1; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t prescalerApb2; //!< ::DRV_RCC_APB_prescaler_E
     uint8_t hseFreq; //!< Frequency of HSE oscillator. 4MHz - 48MHz
-    DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
     RCC_MSI_config_S msiConfig; //!< MSI configuration structure
+    DRV_RCC_PLL_config_S pllConfig; //!< PLL configuration structure
 } DRV_RCC_config_S;
 
 /***************************************************************************************************

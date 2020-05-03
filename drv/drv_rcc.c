@@ -270,8 +270,23 @@ static const uint32_t msiClockFrequency[RCC_MSI_freq_COUNT] = {
     RCC_CR_MSIRANGE_11
 };
 
-//! Flag indicating if any PLL output is used
+//! PLL_P_Q divider real numbers
+static const uint8_t pllPQDivider[RCC_PLL_r_q_COUNT] = {
+    2u, //! RCC_PLL_r_q_2
+    4u, //! RCC_PLL_r_q_4
+    6u, //! RCC_PLL_r_q_6
+    8u  //! RCC_PLL_r_q_8
+};
+
+//! Flag indicating if any PLL output is used. General one so we don't need to go through FOR loop
 static bool_t isPllUsed = FALSE;
+
+//! Flags indicating if PLL outputs are used
+static bool_t isPllDeviceUsed[RCC_PLL_device_COUNT] = {
+        FALSE, //! PLL MAIN
+        FALSE, //! PLL SAI1
+        FALSE  //! PLL SAI2
+};
 
 /***************************************************************************************************
  *                      GLOBAL VARIABLES DEFINITION
@@ -284,6 +299,9 @@ static void RCC_configureHsi16(void);
 static void RCC_configureMsi(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
 static void RCC_configureHse(void);
 static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
+static void RCC_configurePll_R(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr);
+static void RCC_configurePll_Q(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr);
+static void RCC_configurePll_P(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr);
 static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr);
 static void RCC_configureLse(DRV_ERROR_err_E *outErr);
 static void RCC_setAsSystemClock(uint8_t inSysClkSrc, DRV_ERROR_err_E *outErr);
@@ -310,15 +328,6 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
             *outErr = ERROR_err_OK;
-            /*
-             * By default disable all PLL outputs as they can be used even though Main PLL is not
-             *  used a System Clock
-             */
-            // Disable MAIN, SAI1 and SAI2 PLL
-            RCC->CFGR &= ((~RCC_CR_PLLON) & (~RCC_CR_PLLSAI1ON) & (~RCC_CR_PLLSAI2ON));
-
-            // Wait for PLL to stop
-            while((RCC->CFGR & (~RCC_CR_PLLRDY)) != RCC_CR_PLLRDY);
 
             if(DRV_RCC_localConfig.systemClockSrc == (uint8_t)RCC_sysClk_PLL) {
                 // In case developer is trying to use PLL as a System Clock but forgot to enable it
@@ -460,12 +469,113 @@ static void RCC_configureHse(void) {
 }
 
 static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
-    if(isPllUsed == TRUE) {
-        // Write PLLM which is shared across all PLL devices
-        RCC->CFGR |= (inConfig->pllConfig.pllClk_M << RCC_PLLCFGR_PLLM_Pos);
+    uint8_t device;
+    uint8_t clock;
 
-        /* Start will MAIN PLL device */
-        if(inConfig->pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_R == TRUE) {
+    // Disable MAIN, SAI1 and SAI2 PLL
+    RCC->CR &= ((~RCC_CR_PLLON) & (~RCC_CR_PLLSAI1ON) & (~RCC_CR_PLLSAI2ON));
+
+    // Wait for them to stop
+    while(((RCC->CR & RCC_CR_PLLRDY) == RCC_CR_PLLRDY)
+            && ((RCC->CR & RCC_CR_PLLSAI1RDY) == RCC_CR_PLLSAI1RDY)
+            && ((RCC->CR & RCC_CR_PLLSAI2RDY) == RCC_CR_PLLSAI2RDY));
+
+    if(isPllUsed == TRUE) {
+        // Write shared divider (M)
+        RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLM_Msk))
+                            | (inConfig->pllConfig.pllClk_M << RCC_PLLCFGR_PLLM_Pos));
+
+        // Configure clocks
+        for(device = 0; device < (uint8_t)RCC_PLL_device_COUNT; device ++) {
+            if(isPllDeviceUsed[device] == TRUE) {
+                // Write device shared multiplier (N)
+                switch(device) {
+                    case (uint8_t)RCC_PLL_device_MAIN:
+                        RCC->PLLCFGR |= (inConfig->pllConfig.config[device].pll_N << RCC_PLLCFGR_PLLN_Pos);
+                        break;
+
+                    case (uint8_t)RCC_PLL_device_SAI1:
+                        break;
+
+                    case (uint8_t)RCC_PLL_device_SAI2:
+                        break;
+
+                    default:
+                        // Should never enter here as its protected by FOR loop
+                        break;
+                }
+
+                // Configure particular clock dividers
+                for(clock = 0; clock < (uint8_t)RCC_PLL_output_COUNT; clock ++) {
+                    switch(clock) {
+                        case (uint8_t)RCC_PLL_output_R:
+                            if(inConfig->pllConfig.config[device].isClkUsed_R == TRUE) {
+                                RCC_configurePll_R(inConfig, device, outErr);
+                            }
+                            break;
+
+                        case (uint8_t)RCC_PLL_output_Q:
+                            if(inConfig->pllConfig.config[device].isClkUsed_Q == TRUE) {
+                                RCC_configurePll_Q(inConfig, device, outErr);
+                            }
+                            break;
+
+                        case (uint8_t)RCC_PLL_output_P:
+                            if(inConfig->pllConfig.config[device].isClkUsed_P == TRUE) {
+                                RCC_configurePll_P(inConfig, device, outErr);
+                            }
+                            break;
+
+                        default:
+                            // Should never enter here as its protected by FOR loop
+                           break;
+                    }
+                }
+
+                // Configuration for this particular PLL device is done
+                if(*outErr == ERROR_err_OK) {
+                    // Enable device
+                    switch(device) {
+                        case (uint8_t)RCC_PLL_device_MAIN:
+                            // Enable PLL
+                            RCC->CR |= RCC_CR_PLLON;
+
+                            // Wait for HW to indicate it is ready
+                            while((RCC->CR & RCC_CR_PLLRDY) != RCC_CR_PLLRDY);
+
+                            // Now enable particular used outputs
+                            if(inConfig->pllConfig.config[device].isClkUsed_R == TRUE) {
+                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLREN;
+                            }
+
+                            if(inConfig->pllConfig.config[device].isClkUsed_Q == TRUE) {
+                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLQEN;
+                            }
+
+                            if(inConfig->pllConfig.config[device].isClkUsed_P == TRUE) {
+                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLPEN;
+                            }
+                            break;
+
+                        case (uint8_t)RCC_PLL_device_SAI1:
+                            break;
+
+                        case (uint8_t)RCC_PLL_device_SAI2:
+                            break;
+
+                        default:
+                            // Should never enter here as its protected by FOR loop
+                            break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void RCC_configurePll_R(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr) {
+    switch(inDevice) {
+        case (uint8_t)RCC_PLL_device_MAIN:
             // PLL is used as a System clock. Configure used clock
             switch(inConfig->pllConfig.inputClock) {
                 case (uint8_t)RCC_PLL_inputClock_MSI:
@@ -486,23 +596,77 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
             }
 
             // Write divider for SYSCLK. PLLR
-            RCC->CFGR |= (inConfig->pllConfig.config[RCC_PLL_device_MAIN].pll_R << RCC_PLLCFGR_PLLR_Pos);
-        } else {
-            // Disable it to save power
-        }
+            RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLR_Msk))
+                                | (inConfig->pllConfig.config[inDevice].pll_R << RCC_PLLCFGR_PLLR_Pos));
 
-        if(inConfig->pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_Q == TRUE) {
-            RCC->CFGR &= ~RCC_PLLCFGR_PLLQEN;
-        }
+            // Calculate System Clock
+            pllSysClk = vcoPllOutputClockFreq[inDevice]
+                          / pllPQDivider[inConfig->pllConfig.config[inDevice].pll_R];
+
+            if(pllSysClk > DRV_RCC_SYSCLK_MAX_FREQ) {
+                *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+            }
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI1:
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI2:
+            break;
+
+        default:
+            // Should never enter here as its protected by FOR loop
+            break;
+    }
+}
+
+static void RCC_configurePll_Q(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr) {
+    fp32_t outFreq = 0.0f;
+
+    switch(inDevice) {
+        case (uint8_t)RCC_PLL_device_MAIN:
+            RCC->PLLCFGR |= (inConfig->pllConfig.config[inDevice].pll_Q << RCC_PLLCFGR_PLLQ_Pos);
+
+            // Output frequency needs to be 48Hz
+            outFreq = vcoPllOutputClockFreq[inDevice] / inConfig->pllConfig.config[inDevice].pll_Q;
+            if(outFreq != DRV_RCC_PLL_48_MHZ_CLK_FRQ) {
+                *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+            }
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI1:
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI2:
+            break;
+
+        default:
+            // Should never enter here as its protected by FOR loop
+            break;
+    }
+}
+
+static void RCC_configurePll_P(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr) {
+    switch(inDevice) {
+        case (uint8_t)RCC_PLL_device_MAIN:
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI1:
+            break;
+
+        case (uint8_t)RCC_PLL_device_SAI2:
+            break;
+
+        default:
+            // Should never enter here as its protected by FOR loop
+            break;
     }
 }
 
 static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
     uint8_t inputRawFreq;
-    fp32_t lVcoInputFreq;
-    fp32_t lVcoOutputFreq;
-    // Flags indicating if any output is used on certain PLL device
-    bool_t isUsed[RCC_PLL_device_COUNT];
+    fp32_t lVcoInputFreq = 0.0f;
+    fp32_t lVcoOutputFreq = 0.0f;
     uint8_t i;
 
     if(inConfig->pllConfig.pllClk_M >= (uint8_t)RCC_PLL_m_COUNT) {
@@ -518,28 +682,29 @@ static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *out
                         || (inConfig->pllConfig.config[i].pll_N > DRV_RCC_PLL_N_MAX)) {
                     *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
                 }
-                isUsed[i] = TRUE;
                 isPllUsed = TRUE;
-            } else {
-                isUsed[i] = FALSE;
+                isPllDeviceUsed[i] = TRUE;
             }
 
-            // Check now independent outputs
-            if(inConfig->pllConfig.config[i].isClkUsed_R == TRUE) {
-                if(inConfig->pllConfig.config[i].pll_R >= (uint8_t)RCC_PLL_r_COUNT) {
-                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+            // In case PLL device is used check what outputs are used
+            if(isPllDeviceUsed[i] == TRUE) {
+                // Check now independent outputs
+                if(inConfig->pllConfig.config[i].isClkUsed_R == TRUE) {
+                    if(inConfig->pllConfig.config[i].pll_R >= (uint8_t)RCC_PLL_r_q_COUNT) {
+                        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    }
                 }
-            }
 
-            if(inConfig->pllConfig.config[i].isClkUsed_Q == TRUE) {
-                if(inConfig->pllConfig.config[i].pll_Q >= (uint8_t)RCC_PLL_q_COUNT) {
-                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                if(inConfig->pllConfig.config[i].isClkUsed_Q == TRUE) {
+                    if(inConfig->pllConfig.config[i].pll_Q >= (uint8_t)RCC_PLL_r_q_COUNT) {
+                        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    }
                 }
-            }
 
-            if(inConfig->pllConfig.config[i].isClkUsed_P == TRUE) {
-                if(inConfig->pllConfig.config[i].pll_P >= (uint8_t)RCC_PLL_p_COUNT) {
-                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                if(inConfig->pllConfig.config[i].isClkUsed_P == TRUE) {
+                    if(inConfig->pllConfig.config[i].pll_P >= (uint8_t)RCC_PLL_p_COUNT) {
+                        *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
+                    }
                 }
             }
         }
@@ -575,9 +740,9 @@ static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *out
         if(*outErr == ERROR_err_OK) {
             // Calculate VCO frequencies
             for(i = 0; i < (uint8_t)RCC_PLL_device_COUNT; i ++) {
-                if(isUsed[i] == TRUE) {
-                    // Calculate VCO Input frequency
-                    lVcoInputFreq = inputRawFreq / inConfig->pllConfig.pllClk_M;
+                if(isPllDeviceUsed[i] == TRUE) {
+                    // Calculate VCO Input frequency. +1 as M has an enumerator value and going from 0
+                    lVcoInputFreq = (inputRawFreq / (inConfig->pllConfig.pllClk_M + 1u));
                     if((lVcoInputFreq < RCC_VCO_INPUT_MIN_FREQ)
                             || (lVcoInputFreq > RCC_VCO_INPUT_MAX_FREQ)) {
                         *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
@@ -587,7 +752,7 @@ static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *out
 
                     if(*outErr == ERROR_err_OK) {
                         // Calculate VCO Output frequency
-                        lVcoOutputFreq *= inConfig->pllConfig.config[i].pll_N;
+                        lVcoOutputFreq = (lVcoInputFreq * inConfig->pllConfig.config[i].pll_N);
 
                         // Check for VCO output frequency
                         if((lVcoOutputFreq < RCC_VCO_OUTPUT_MIN_FREQ)
@@ -648,10 +813,15 @@ static void RCC_setAsSystemClock(uint8_t inSysClkSrc, DRV_ERROR_err_E *outErr) {
             RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_HSE);
 
             // Wait for HW to indicate that HSE is indeed used as a System Clock
-            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SW_HSE);
+            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSE);
             break;
 
         case (uint8_t)RCC_sysClk_PLL:
+            // Switch PLL to be used as a System Clock
+            RCC->CFGR |= ((RCC->CFGR & (~RCC_CFGR_SW)) | RCC_CFGR_SW_PLL);
+
+            // Wait for HW to indicate that PLL is indeed used as a System Clock
+            while((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
             break;
 
         default:
@@ -721,7 +891,7 @@ static void RCC_configureFlashLatency(DRV_RCC_config_S *inConfig) {
         break;
     }
 
-    FLASH->ACR |= flashLatency;
+    FLASH->ACR = (FLASH->ACR & (~FLASH_ACR_LATENCY)) | flashLatency;
 }
 
 static uint32_t *RCC_getRstReg(uint8_t inPeripheral) {

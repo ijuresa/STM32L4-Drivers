@@ -81,7 +81,7 @@ static CM4_SYSTICK_config_S lSysTickConfig = {
     .param = NULL_PTR
 };
 
-// SysTick
+//! SysTick
 static volatile uint32_t * const sysCsr = (volatile uint32_t *)SYST_CSR;
 static volatile uint32_t * const sysRvr = (volatile uint32_t *)SYST_RVR;
 static volatile uint32_t * const sysCvr = (volatile uint32_t *)SYST_CVR;
@@ -111,6 +111,8 @@ void CM4_SYSTICK_init(const CM4_SYSTICK_config_S *inConfig, DRV_ERROR_err_E *out
         if(inConfig->clockSrc >= (uint8_t)SYSTICK_clockSrc_COUNT) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
+            *outErr = ERROR_err_OK;
+
             // Let's calculate new Reload value
             reloadVal = SYSTICK_calculateReloadVal(&lSysTickConfig);
             if((reloadVal >= SYSTICK_RELOAD_VAL_MIN_VAL) && (reloadVal <= SYSTICK_RELOAD_VAL_MAX_VAL)) {

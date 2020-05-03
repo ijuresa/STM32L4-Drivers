@@ -283,9 +283,9 @@ static bool_t isPllUsed = FALSE;
 
 //! Flags indicating if PLL outputs are used
 static bool_t isPllDeviceUsed[RCC_PLL_device_COUNT] = {
-        FALSE, //! PLL MAIN
-        FALSE, //! PLL SAI1
-        FALSE  //! PLL SAI2
+    FALSE, //! PLL MAIN
+    FALSE, //! PLL SAI1
+    FALSE  //! PLL SAI2
 };
 
 /***************************************************************************************************
@@ -334,11 +334,19 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
                 DRV_RCC_localConfig.pllConfig.config[RCC_PLL_device_MAIN].isClkUsed_R = TRUE;
             }
 
+            // Before doing anything set flash latency to maximum value. With this we are avoiding
+            // pre-calculating problem. Basically it means we don't need to divide clock frequency
+            // calculations with initialization. Flash write delay will be written to correct
+            // value right before new System Clock is set in ::RCC_configureFlashLatency
+            FLASH->ACR = (FLASH->ACR & (~FLASH_ACR_LATENCY)) | FLASH_ACR_LATENCY_4WS;
+
             // Do universal PLL VCO calculations, in case PLL is used
             RCC_calculatePllVco(&DRV_RCC_localConfig, outErr);
 
-            // Configure PLL Devices
-            RCC_configurePllClocks(&DRV_RCC_localConfig, outErr);
+            if(*outErr == ERROR_err_OK) {
+                // Configure PLL Devices
+                RCC_configurePllClocks(&DRV_RCC_localConfig, outErr);
+            }
 
             if(*outErr == ERROR_err_OK) {
                 // Set requested clock
@@ -371,9 +379,9 @@ void DRV_RCC_init(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *outErr) {
                 RCC_setAsSystemClock(DRV_RCC_localConfig.systemClockSrc, outErr);
 
                 // Set AHB, APB1 and APB2
-                RCC->CFGR |= ahbDividerVal[DRV_RCC_localConfig.prescalerAhb];
-                RCC->CFGR |= apbDividerVal_01[DRV_RCC_localConfig.prescalerApb1];
-                RCC->CFGR |= apbDividerVal_02[DRV_RCC_localConfig.prescalerApb2];
+                RCC->CFGR = ((RCC->CFGR & (~RCC_CFGR_HPRE)) | ahbDividerVal[DRV_RCC_localConfig.prescalerAhb]);
+                RCC->CFGR = ((RCC->CFGR & (~RCC_CFGR_PPRE1)) | apbDividerVal_01[DRV_RCC_localConfig.prescalerApb1]);
+                RCC->CFGR = ((RCC->CFGR & (~RCC_CFGR_PPRE2)) | apbDividerVal_02[DRV_RCC_localConfig.prescalerApb2]);
             }
         }
     }
@@ -485,6 +493,28 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
         RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLM_Msk))
                             | (inConfig->pllConfig.pllClk_M << RCC_PLLCFGR_PLLM_Pos));
 
+        // Configure PLL Input Clock
+        switch(inConfig->pllConfig.inputClock) {
+            case (uint8_t)RCC_PLL_inputClock_MSI:
+                RCC_configureMsi(inConfig, outErr);
+                break;
+
+            case (uint8_t)RCC_PLL_inputClock_HSI_16:
+                RCC_configureHsi16();
+                break;
+
+            case (uint8_t)RCC_PLL_inputClock_HSE:
+                RCC_configureHse();
+                break;
+
+            default:
+                // Should never enter here
+                break;
+        }
+
+        // Set PLL input clock. +1 as we are going from 0 are register values from 1
+        RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLSRC)) | (inConfig->pllConfig.inputClock + 1u));
+
         // Configure clocks
         for(device = 0; device < (uint8_t)RCC_PLL_device_COUNT; device ++) {
             if(isPllDeviceUsed[device] == TRUE) {
@@ -576,25 +606,6 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
 static void RCC_configurePll_R(DRV_RCC_config_S *inConfig, uint8_t inDevice, DRV_ERROR_err_E *outErr) {
     switch(inDevice) {
         case (uint8_t)RCC_PLL_device_MAIN:
-            // PLL is used as a System clock. Configure used clock
-            switch(inConfig->pllConfig.inputClock) {
-                case (uint8_t)RCC_PLL_inputClock_MSI:
-                    RCC_configureMsi(inConfig, outErr);
-                    break;
-
-                case (uint8_t)RCC_PLL_inputClock_HSI_16:
-                    RCC_configureHsi16();
-                    break;
-
-                case (uint8_t)RCC_PLL_inputClock_HSE:
-                    RCC_configureHse();
-                    break;
-
-                default:
-                    *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
-                    break;
-            }
-
             // Write divider for SYSCLK. PLLR
             RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLR_Msk))
                                 | (inConfig->pllConfig.config[inDevice].pll_R << RCC_PLLCFGR_PLLR_Pos));

@@ -512,7 +512,7 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
                 break;
         }
 
-        // Set PLL input clock. +1 as we are going from 0 are register values from 1
+        // Set PLL input clock. +1 as we are going from 0 but register values from 1
         RCC->PLLCFGR = ((RCC->PLLCFGR & (~RCC_PLLCFGR_PLLSRC)) | (inConfig->pllConfig.inputClock + 1u));
 
         // Configure clocks
@@ -525,9 +525,11 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
                         break;
 
                     case (uint8_t)RCC_PLL_device_SAI1:
+                        RCC->PLLSAI1CFGR |= (inConfig->pllConfig.config[device].pll_N << RCC_PLLSAI1CFGR_PLLSAI1N_Pos);
                         break;
 
                     case (uint8_t)RCC_PLL_device_SAI2:
+                        RCC->PLLSAI2CFGR |= (inConfig->pllConfig.config[device].pll_N << RCC_PLLSAI2CFGR_PLLSAI2N_Pos);
                         break;
 
                     default:
@@ -561,42 +563,43 @@ static void RCC_configurePllClocks(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *
                            break;
                     }
                 }
+            }
+        }
 
-                // Configuration for this particular PLL device is done
-                if(*outErr == ERROR_err_OK) {
-                    // Enable device
-                    switch(device) {
-                        case (uint8_t)RCC_PLL_device_MAIN:
-                            // Enable PLL
-                            RCC->CR |= RCC_CR_PLLON;
+        // Clocks are configured. Now we can safely enable needed ones
+        if(*outErr == ERROR_err_OK) {
+            // Enable PLL
+            RCC->CR |= RCC_CR_PLLON;
 
-                            // Wait for HW to indicate it is ready
-                            while((RCC->CR & RCC_CR_PLLRDY) != RCC_CR_PLLRDY);
+            // Wait for HW to indicate it is ready
+            while((RCC->CR & RCC_CR_PLLRDY) != RCC_CR_PLLRDY);
 
-                            // Now enable particular used outputs
-                            if(inConfig->pllConfig.config[device].isClkUsed_R == TRUE) {
-                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLREN;
-                            }
+            // Now for each PLL device enable configured Output
+            for(device = 0; device < (uint8_t)RCC_PLL_device_COUNT; device ++) {
+                switch(device) {
+                    case (uint8_t)RCC_PLL_device_MAIN:
+                        if(inConfig->pllConfig.config[device].isClkUsed_R == TRUE) {
+                            RCC->PLLCFGR |= RCC_PLLCFGR_PLLREN;
+                        }
 
-                            if(inConfig->pllConfig.config[device].isClkUsed_Q == TRUE) {
-                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLQEN;
-                            }
+                        if(inConfig->pllConfig.config[device].isClkUsed_Q == TRUE) {
+                            RCC->PLLCFGR |= RCC_PLLCFGR_PLLQEN;
+                        }
 
-                            if(inConfig->pllConfig.config[device].isClkUsed_P == TRUE) {
-                                RCC->PLLCFGR |= RCC_PLLCFGR_PLLPEN;
-                            }
-                            break;
+                        if(inConfig->pllConfig.config[device].isClkUsed_P == TRUE) {
+                            RCC->PLLCFGR |= RCC_PLLCFGR_PLLPEN;
+                        }
+                        break;
 
-                        case (uint8_t)RCC_PLL_device_SAI1:
-                            break;
+                    case (uint8_t)RCC_PLL_device_SAI1:
+                        break;
 
-                        case (uint8_t)RCC_PLL_device_SAI2:
-                            break;
+                    case (uint8_t)RCC_PLL_device_SAI2:
+                        break;
 
-                        default:
-                            // Should never enter here as its protected by FOR loop
-                            break;
-                    }
+                    default:
+                        // Should never enter here as its protected by FOR loop
+                        break;
                 }
             }
         }
@@ -749,7 +752,7 @@ static void RCC_calculatePllVco(DRV_RCC_config_S *inConfig, DRV_ERROR_err_E *out
         }
 
         if(*outErr == ERROR_err_OK) {
-            // Calculate VCO frequencies
+            // Calculate VCO frequencies for each used PLL device
             for(i = 0; i < (uint8_t)RCC_PLL_device_COUNT; i ++) {
                 if(isPllDeviceUsed[i] == TRUE) {
                     // Calculate VCO Input frequency. +1 as M has an enumerator value and going from 0

@@ -302,14 +302,14 @@ typedef struct DRV_RCC_config_STRUCT {
  * @brief   Clock initialization function.
  * @details Function allows input configuration to be NLL_PTR. In that case it will use default
  *          static configuration:
- *
- *          TODO
+ *              - MSI as an input clock at 4 MHz
+ *              - PLL used as a System Clock
+ *              - The rest is OFF
  * *************************************************************************************************
  * @param   [in]      *inConfig - Pointer to DRV_RCC configuration structure ::DRV_RCC_config_S
  * @param   [out]     *outErr   - Output driver error enumerator
  * *************************************************************************************************
- * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Input peripheral does not exist, out of boundaries
- *                                                 or reset for that peripheral is not supported.
+ * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Input arguments are wrong
  * *************************************************************************************************
  * @return  Nothing
  **************************************************************************************************/

@@ -21,17 +21,18 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  **************************************************************************************************
- * @file   drv_gpio.h
+ * @file   hal_gpio.h
  * @author ivan.juresa
- * @brief  General Purpose Input Output driver
+ * @brief  
  **************************************************************************************************/
 
-#ifndef DRV_GPIO_H_
-#define DRV_GPIO_H_
+#ifndef HAL_GPIO_H_
+#define HAL_GPIO_H_
 
 /***************************************************************************************************
  *                      INCLUDE FILES
  **************************************************************************************************/
+#include "typedefs.h"
 #include <stdint.h>
 
 // DRV
@@ -40,63 +41,10 @@
 /***************************************************************************************************
  *                      DEFINES
  **************************************************************************************************/
-#define GPIO_AF_MAX_VAL (15u) //!< Maximum value for Alternate Function
 
 /***************************************************************************************************
  *                      ENUMERATIONS
  **************************************************************************************************/
-//! In data
-typedef enum DRV_GPIO_inData_ENUM {
-    GPIO_inData_OFF   = 0u,
-    GPIO_inData_ON    = 1u,
-    GPIO_inData_COUNT = 2u
-} DRV_GPIO_inData_ENUM;
-
-//! GPIO Ports
-typedef enum DRV_GPIO_port_ENUM {
-    GPIO_port_A     = 0u,
-    GPIO_port_B     = 1u,
-    GPIO_port_C     = 2u,
-    GPIO_port_D     = 3u,
-    GPIO_port_E     = 4u,
-    GPIO_port_F     = 5u,
-    GPIO_port_G     = 6u,
-    GPIO_port_H     = 7u,
-    GPIO_port_COUNT = 8u
-} DRV_GPIO_port_E;
-
-//! GPIO port mode register
-typedef enum DRV_GPIO_mode_ENUM {
-    GPIO_mode_INPUT  = 0u,
-    GPIO_mode_OUTPUT = 1u,
-    GPIO_mode_AF     = 2u, //!< Alternate function
-    GPIO_mode_ANALOG = 3u,
-    GPIO_mode_COUNT  = 4u
-} DRV_GPIO_mode_E;
-
-//! GPIO port output type register
-typedef enum DRV_GPIO_oType_ENUM {
-    GPIO_oType_PUSH_PULL  = 0u, //!< Reset state
-    GPIO_oType_OPEN_DRAIN = 1u,
-    GPIO_oType_COUNT      = 2u
-} DRV_GPIO_oType_E;
-
-//! GPIO port output speed register
-typedef enum DRV_GPIO_oSpeed_ENUM {
-    GPIO_oSpeed_LOW       = 0u,
-    GPIO_oSpeed_MEDIUM    = 1u,
-    GPIO_oSpeed_HIGH      = 2u,
-    GPIO_oSpeed_VERY_HIGH = 3u,
-    GPIO_oSpeed_COUNT     = 4u
-} DRV_GPIO_oSpeed_E;
-
-//! GPIO port pull-up/pull-down register
-typedef enum DRV_GPIO_pupd_ENUM {
-    GPIO_pupd_NONE  = 0u,
-    GPIO_pupd_UP    = 1u,
-    GPIO_pupd_DOWN  = 2u,
-    GPIO_pupd_COUNT = 3u
-} DRV_GPIO_pupd_E;
 
 /***************************************************************************************************
  *                      UNIONS
@@ -109,6 +57,17 @@ typedef enum DRV_GPIO_pupd_ENUM {
 /***************************************************************************************************
  *                      DATA STRUCTURES
  **************************************************************************************************/
+//! HAL GPIO configuration structure. Each used pin should have it
+typedef struct HAL_GPIO_config_STRUCT {
+    uint8_t port; //!< Port ID. ::DRV_GPIO_port_ENUM
+    uint8_t pin; //!< Pin ID. 0 - 15
+    uint8_t mode; //!< Mode ::DRV_GPIO_mode_E
+    uint8_t outputType; //!< Output type ::DRV_GPIO_oType_E
+    uint8_t outputSpeed; //!< Output speed ::DRV_GPIO_oSpeed_E
+    uint8_t pudsel; //!< Pull up/down ::DRV_GPIO_pupd_E
+    uint8_t alternateFunction; //!< Alternate function ID. 0 - 15
+    uint8_t ahbApbClockId; //!< ::DRV_RCC_ahb_apb_E
+} HAL_GPIO_config_S;
 
 /***************************************************************************************************
  *                      GLOBAL VARIABLES DECLARATIONS
@@ -117,12 +76,11 @@ typedef enum DRV_GPIO_pupd_ENUM {
 /***************************************************************************************************
  *                      PUBLIC FUNCTION PROTOTYPES
  **************************************************************************************************/
-void DRV_GPIO_init(uint8_t inPort, uint8_t inPin, uint8_t inMode, uint8_t inOutputType,
-        uint8_t inOutputSpeed, uint8_t inPudsel, uint8_t inAlternateFunction, DRV_ERROR_err_E *outErr);
-uint8_t DRV_GPIO_readPin(uint8_t inPort, uint8_t inPin, DRV_ERROR_err_E *outErr);
-void DRV_GPIO_writePin(uint8_t inPort, uint8_t inPin, uint8_t inData, DRV_ERROR_err_E *outErr);
+void HAL_GPIO_init(HAL_GPIO_config_S *inPinConfig, DRV_ERROR_err_E *outErr);
+uint8_t HAL_GPIO_read(HAL_GPIO_config_S *inPinConfig, DRV_ERROR_err_E *outErr);
+void HAL_GPIO_write(HAL_GPIO_config_S *inPinConfig, uint8_t inData, DRV_ERROR_err_E *outErr);
 
-#endif /* DRV_GPIO_H_ */
+#endif /* HAL_GPIO_H_ */
 
 /***************************************************************************************************
  *                      END OF FILE

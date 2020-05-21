@@ -23,7 +23,7 @@
  **************************************************************************************************
  * @file   drv_gpio.h
  * @author ivan.juresa
- * @brief  
+ * @brief  General Purpose Input Output driver
  **************************************************************************************************/
 
 #ifndef DRV_GPIO_H_
@@ -32,11 +32,15 @@
 /***************************************************************************************************
  *                      INCLUDE FILES
  **************************************************************************************************/
+#include <stdint.h>
+
+// DRV
 #include "drv_error.h"
 
 /***************************************************************************************************
  *                      DEFINES
  **************************************************************************************************/
+#define GPIO_AF_MAX_VAL (15u) //!< Maximum value for Alternate Function
 
 /***************************************************************************************************
  *                      ENUMERATIONS
@@ -114,7 +118,7 @@ typedef enum GPIO_pupd_ENUM {
  *                      PUBLIC FUNCTION PROTOTYPES
  **************************************************************************************************/
 void DRV_GPIO_init(uint8_t inPort, uint8_t inPin, uint8_t inMode, uint8_t inOutputType,
-        uint8_t inOutputSpeed,uint8_t inPudsel, uint8_t inAlternateFunction, DRV_ERROR_err_E *outErr);
+        uint8_t inOutputSpeed, uint8_t inPudsel, uint8_t inAlternateFunction, DRV_ERROR_err_E *outErr);
 uint8_t DRV_GPIO_readPin(uint8_t inPort, uint8_t inPin, DRV_ERROR_err_E *outErr);
 void DRV_GPIO_writePin(uint8_t inPort, uint8_t inPin, uint8_t inData, DRV_ERROR_err_E *outErr);
 

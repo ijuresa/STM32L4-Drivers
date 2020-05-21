@@ -37,12 +37,17 @@
 
 // DRV
 #include "drv_gpio.h"
-#include "drv_rcc.h"
 
 /***************************************************************************************************
  *                      PRIVATE DEFINES
  **************************************************************************************************/
-#define DRV_GPIO_MAX_PIN_PER_PORT (16u)
+#define GPIO_MAX_PIN_PER_PORT (16u) //!< Number of pins per GPIO port
+
+//! Alternate function
+#define GPIO_AF_HIGH_REG_FIRST_PIN (8u) //!< High AF first pin
+#define AF_LOW_REG  (0u) //!< Lower register ID in an array
+#define AF_HIGH_REG (1u) //!< Higher register ID in an array
+#define AF_SHIFT (4u) //!< 4 bits shift
 
 /***************************************************************************************************
  *                      PRIVATE DATA TYPES
@@ -70,24 +75,34 @@ void DRV_GPIO_init(uint8_t inPort, uint8_t inPin, uint8_t inMode, uint8_t inOutp
 
     if(outErr != NULL_PTR) {
         if((inPort >= (uint8_t)GPIO_port_COUNT)
-                || (inPin >= DRV_GPIO_MAX_PIN_PER_PORT)
+                || (inPin >= GPIO_MAX_PIN_PER_PORT)
                 || (inMode >= (uint8_t)GPIO_mode_COUNT)
                 || (inOutputType >= (uint8_t)GPIO_oType_COUNT)
                 || (inOutputSpeed >= (uint8_t)GPIO_oSpeed_COUNT)
-                || (inPudsel >= (uint8_t)GPIO_pupd_COUNT)) {
-            // TODO: Add Alternate Function. Ignored for now
+                || (inPudsel >= (uint8_t)GPIO_pupd_COUNT)
+                || (inAlternateFunction >= GPIO_AF_MAX_VAL)) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
             *outErr = ERROR_err_OK;
-
-            // Enable clock
-            // TODO: Refactor this so its not ugly like this
-            DRV_RCC_peripheralEnable((inPort + (uint8_t)RCC_ahb_GPIO_A), TRUE, outErr);
 
             port = GPIO_getPortBase(inPort);
 
             // Set mode
             port->MODER |= (inMode << (inPin + inPin));
+
+            // Alternate function
+            if(inMode == (uint8_t)GPIO_mode_AF) {
+                if(inPin < GPIO_AF_HIGH_REG_FIRST_PIN) {
+                    // Lower register
+                    port->AFR[AF_LOW_REG] |= (inAlternateFunction << (inPin * AF_SHIFT));
+                } else {
+                    // Higher register
+                    port->AFR[AF_HIGH_REG] |= (inAlternateFunction
+                                                << ((inPin % GPIO_AF_HIGH_REG_FIRST_PIN) * AF_SHIFT));
+                }
+            }
+
+            // TODO: Analog inputs
 
             // Set output type
             port->OTYPER |= (inOutputType << inPin);
@@ -106,7 +121,7 @@ uint8_t DRV_GPIO_readPin(uint8_t inPort, uint8_t inPin, DRV_ERROR_err_E *outErr)
     uint8_t outData;
 
     if(outErr != NULL_PTR) {
-        if((inPort >= (uint8_t)GPIO_port_COUNT) || (inPin >= DRV_GPIO_MAX_PIN_PER_PORT)) {
+        if((inPort >= (uint8_t)GPIO_port_COUNT) || (inPin >= GPIO_MAX_PIN_PER_PORT)) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
             *outErr = ERROR_err_OK;
@@ -118,7 +133,6 @@ uint8_t DRV_GPIO_readPin(uint8_t inPort, uint8_t inPin, DRV_ERROR_err_E *outErr)
         }
     }
 
-
     return outData;
 }
 
@@ -127,7 +141,7 @@ void DRV_GPIO_writePin(uint8_t inPort, uint8_t inPin, uint8_t inData, DRV_ERROR_
 
     if(outErr != NULL_PTR) {
         if((inPort >= (uint8_t)GPIO_port_COUNT)
-                || (inPin >= DRV_GPIO_MAX_PIN_PER_PORT)
+                || (inPin >= GPIO_MAX_PIN_PER_PORT)
                 || (inData >= (uint8_t)GPIO_inData_COUNT)) {
             *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
         } else {
@@ -144,6 +158,7 @@ void DRV_GPIO_writePin(uint8_t inPort, uint8_t inPin, uint8_t inData, DRV_ERROR_
         }
     }
 }
+
 /***************************************************************************************************
  *                      PRIVATE FUNCTIONS DEFINITION
  **************************************************************************************************/

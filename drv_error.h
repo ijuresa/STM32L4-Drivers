@@ -45,7 +45,8 @@ typedef enum DRV_ERROR_err_ENUM {
     ERROR_err_NULL_PTR          = 1u,
     ERROR_err_ARGS_OUT_OF_RANGE = 2u,
     ERROR_err_NOT_INITIALISED   = 3u,
-    ERROR_err_COUNT             = 4u
+    ERROR_err_PERIPHERAL_BUSY   = 4u,
+    ERROR_err_COUNT             = 5u
 } DRV_ERROR_err_E;
 
 /***************************************************************************************************

@@ -34,6 +34,7 @@
  **************************************************************************************************/
 #include "typedefs.h"
 #include "string.h"
+#include "stm32l475xx.h"
 
 // DRV
 #include "drv_rcc.h"

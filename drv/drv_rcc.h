@@ -32,7 +32,7 @@
 /***************************************************************************************************
  *                      INCLUDE FILES
  **************************************************************************************************/
-#include "stm32l475xx.h"
+#include "typedefs.h"
 
 // DRV
 #include "drv_error.h"
@@ -309,7 +309,7 @@ typedef struct DRV_RCC_config_STRUCT {
  * @param   [in]      *inConfig - Pointer to DRV_RCC configuration structure ::DRV_RCC_config_S
  * @param   [out]     *outErr   - Output driver error enumerator
  * *************************************************************************************************
- * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Input arguments are wrong
+ * @exceptions        ERROR_err_ARGS_OUT_OF_RANGE: Input arguments are wrong.
  * *************************************************************************************************
  * @return  Nothing
  **************************************************************************************************/

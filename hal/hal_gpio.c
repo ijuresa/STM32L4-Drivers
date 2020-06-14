@@ -69,17 +69,18 @@ void HAL_GPIO_init(HAL_GPIO_config_S *inPinConfig, DRV_ERROR_err_E *outErr) {
         } else {
             *outErr = ERROR_err_OK;
 
-            DRV_GPIO_init(inPinConfig->port,
-                          inPinConfig->pin,
-                          inPinConfig->mode,
-                          inPinConfig->outputType,
-                          inPinConfig->outputSpeed,
-                          inPinConfig->pudsel,
-                          inPinConfig->alternateFunction,
-                          outErr);
+            // Enable clock
+            DRV_RCC_peripheralEnable(inPinConfig->ahbApbClockId, TRUE, outErr);
+
             if(*outErr == ERROR_err_OK) {
-                // Enable clock
-                DRV_RCC_peripheralEnable(inPinConfig->ahbApbClockId, TRUE, outErr);
+                DRV_GPIO_init(inPinConfig->port,
+                              inPinConfig->pin,
+                              inPinConfig->mode,
+                              inPinConfig->outputType,
+                              inPinConfig->outputSpeed,
+                              inPinConfig->pudsel,
+                              inPinConfig->alternateFunction,
+                              outErr);
             }
         }
     }

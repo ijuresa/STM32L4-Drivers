@@ -87,6 +87,9 @@ void DRV_GPIO_init(uint8_t inPort, uint8_t inPin, uint8_t inMode, uint8_t inOutp
 
             port = GPIO_getPortBase(inPort);
 
+            // Clear mode
+            port->MODER &= ~(0x03u << (inPin + inPin));
+
             // Set mode
             port->MODER |= (inMode << (inPin + inPin));
 
@@ -150,8 +153,12 @@ void DRV_GPIO_writePin(uint8_t inPort, uint8_t inPin, uint8_t inData, DRV_ERROR_
             port = GPIO_getPortBase(inPort);
 
             // Allow only writes to I/O pin configured in an Output Mode
-            if((port->MODER >> (inPin + inPin) & 0x03u) == (uint8_t)GPIO_mode_OUTPUT) {
-                port->ODR |= (inData << inPin);
+            if(((port->MODER >> (inPin + inPin)) & 0x03u) == (uint8_t)GPIO_mode_OUTPUT) {
+                if(inData == (uint8_t)GPIO_inData_OFF) {
+                    port->ODR &= ~(0x1u << inPin);
+                } else {
+                    port->ODR |= (0x1u << inPin);
+                }
             } else {
                 *outErr = ERROR_err_ARGS_OUT_OF_RANGE;
             }
@@ -170,6 +177,7 @@ static INLINE GPIO_TypeDef * GPIO_getPortBase(uint8_t inPort) {
 
     return (GPIO_TypeDef *)portBase[inPort];
 }
+
 #endif // DRV_GPIO_C_
 
 /***************************************************************************************************
